@@ -60,6 +60,14 @@ Key invariant: `RaceState` schema + tick protocol are series-agnostic — variab
 Dependency chain: 1→2→3→4→5; 6 needs 3; 7 needs 6 (+4 for serving); 8 needs 5+7.
 Hard gate: Phase 6 sim validation MUST pass before Phase 7 RL work starts.
 
+## Current Todo
+- Phase 2: verify full 2024→now backfill job `bvx43hahr` completed cleanly.
+- Phase 3: optional portable DB artifact available via `make build-archive-db`.
+- Phase 5: direct race links and home-page loader now auto-ingest missing races from FastF1.
+- Phase 6: run validation gate and save report under `plans/reports/`; only then move Phase 7 to in-progress.
+- Phase 7: blocked until Phase 6 validation passes.
+- Phase 8: blocked until Phase 7 prediction service exists.
+
 ## Out of Scope (this plan)
 
 - Live SignalR adapter → v2 (interface `LiveSource` reserved in Phase 4; record raw streams during race weekends when convenient)

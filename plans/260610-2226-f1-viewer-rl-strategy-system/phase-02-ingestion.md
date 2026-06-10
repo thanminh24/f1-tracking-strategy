@@ -46,11 +46,15 @@ Key FastF1 mappings: `session.laps` → laps+stints (Stint, Compound, TyreLife c
 7. Full backfill run 2024→2026-06 (long; document expected duration + disk in README).
 
 ## Success Criteria
-- [ ] Single-session ingest produces all entity parquets with documented schemas
-- [ ] Backfill resumable: rerun skips completed sessions in <30s
-- [ ] Failed session logged, run continues
-- [ ] Full 2024→now archive on disk; total size ≤ ~5GB excl. fastf1 telemetry cache
-- [ ] Extractor tests pass against cached fixture session
+- [x] Single-session ingest produces all entity parquets with documented schemas
+- [x] Backfill resumable: rerun skips completed sessions in <30s
+- [x] Failed session logged, run continues
+- [ ] Full 2024→now archive on disk; background backfill job `bvx43hahr` still needs final verification
+- [x] Extractor tests pass against cached fixture session
+
+## Operational Commands
+- `make ingest ARGS="--year 2024 --round 1 --session R"` loads one session.
+- `make ingest-backfill` or `scripts/backfill-archive.sh` resumes the 2024→now archive.
 
 ## Risk Assessment
 - FastF1 API quirks per-season (schema drift 2024 vs 2026) → normalize defensively, assert required cols, log extras.

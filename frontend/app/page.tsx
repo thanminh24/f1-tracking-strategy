@@ -1,5 +1,6 @@
 // Season grid — archive entry point.
 import Link from "next/link";
+import { LoadRaceForm } from "../components/load-race-form";
 import { api } from "../lib/api-client";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,9 @@ export default async function HomePage() {
       <p className="text-zinc-500 mb-8 text-sm">
         archive · replay · telemetry · probabilistic strategy
       </p>
-      {error && <p className="text-red-400">{error}</p>}
-      <div className="grid grid-cols-3 gap-4">
+      <LoadRaceForm />
+      {error && <p className="text-red-400 mt-6">{error}</p>}
+      <div className="grid grid-cols-3 gap-4 mt-6">
         {seasons.map((year) => (
           <Link
             key={year}

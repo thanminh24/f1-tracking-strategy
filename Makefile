@@ -4,7 +4,7 @@
 UV := uv
 BACKEND := cd backend &&
 
-.PHONY: dev dev-backend dev-frontend test lint ingest
+.PHONY: dev dev-backend dev-frontend test lint ingest ingest-backfill build-archive-db
 
 dev: ## run backend :8000 + frontend :3000 concurrently
 	$(MAKE) -j2 dev-backend dev-frontend
@@ -27,3 +27,6 @@ ingest:
 
 ingest-backfill:
 	$(BACKEND) $(UV) run f1-ingest --backfill
+
+build-archive-db:
+	$(BACKEND) $(UV) run f1-build-archive-db --force

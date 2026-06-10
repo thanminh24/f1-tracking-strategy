@@ -51,7 +51,8 @@ Track map source decision (resolve in step 3): derive outline from one fast-lap 
 8. Polish pass: loading states, error boundaries, keyboard shortcuts (space=play/pause).
 
 ## Success Criteria
-- [ ] Browse 2024→now archive and open any race
+- [x] Browse archive and open any race
+- [x] Auto-load missing race sessions from FastF1 via direct `/session/{year}_{round}_R` navigation or the home-page loader
 - [ ] Replay dashboard: map dots, tower, gap chart all animate consistently with tick stream
 - [ ] Seek + speed changes reflect in UI <500ms
 - [ ] Telemetry compare renders 2-driver overlay with delta trace

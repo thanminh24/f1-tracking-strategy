@@ -11,6 +11,8 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from f1_strategy.archive import queries
+from f1_strategy.archive.db import refresh_views
 from f1_strategy.replay.session_manager import manager
 
 log = logging.getLogger(__name__)
@@ -21,9 +23,16 @@ router = APIRouter(tags=["replay"])
 async def ws_replay(websocket: WebSocket, session_key: str) -> None:
     await websocket.accept()
     try:
+        if not queries.session_has_laps(session_key):
+            await asyncio.to_thread(queries.ensure_session, session_key)
+            refresh_views()
         session = manager.get_or_create(session_key)
     except ValueError as exc:  # not in archive
         await websocket.close(code=4404, reason=str(exc))
+        return
+    except Exception:
+        log.exception("session load failed: %s", session_key)
+        await websocket.close(code=1011, reason="session load failed")
         return
     queue = session.subscribe()
 

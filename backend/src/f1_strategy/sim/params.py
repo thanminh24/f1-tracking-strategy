@@ -45,6 +45,7 @@ class SimParams:
     compounds: dict[str, CompoundParams] = field(default_factory=dict)
     driver_offsets_ms: dict[str, float] = field(default_factory=dict)  # car_id → pace delta
     confidence: str = "fitted"  # fitted | pooled | prior
+    lap1_extra_ms: float = 8000.0  # standing start + first-lap congestion penalty
 
     def compound(self, name: str) -> CompoundParams:
         if name in self.compounds:
@@ -62,5 +63,6 @@ class SimParams:
     def load(cls, season: int, circuit: str) -> "SimParams":
         path = get_settings().calibration_dir / str(season) / f"{circuit}.json"
         raw = json.loads(path.read_text())
+        raw.setdefault("lap1_extra_ms", 8000.0)
         raw["compounds"] = {k: CompoundParams(**v) for k, v in raw["compounds"].items()}
         return cls(**raw)

@@ -108,6 +108,8 @@ class RaceStrategyEnv(gym.Env):
             + p.fuel_ms_per_lap * (p.total_laps - lap)
             + self.rng.normal(0, p.noise_sigma_ms, self.n_cars)
         )
+        if lap == 1:
+            lap_ms += p.lap1_extra_ms
         order = np.argsort(self._cum)
         gaps = np.diff(self._cum[order])
         in_traffic = np.zeros(self.n_cars, dtype=bool)

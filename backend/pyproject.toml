@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 f1-ingest = "f1_strategy.ingestion.cli:main"
+f1-build-archive-db = "f1_strategy.archive.build_db:main"
 f1-calibrate = "f1_strategy.sim.calibration.cli:main"
 
 [build-system]

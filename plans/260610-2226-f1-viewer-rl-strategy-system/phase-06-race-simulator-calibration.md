@@ -57,10 +57,15 @@ sim/validation/replay_real_races.py → validation gate runner
 
 ## Success Criteria
 - [ ] Validation gate report exists with all 3 metrics ≥ thresholds on held-out races
-- [ ] ≥200 rollouts/sec benchmark recorded
-- [ ] Same seed → identical rollout (determinism test)
-- [ ] `gym_env` passes `gymnasium.utils.env_checker`
+- [x] ≥200 rollouts/sec benchmark recorded in `backend/tests/sim/test_race_sim_and_gym_env.py`
+- [x] Same seed → identical rollout (determinism test)
+- [x] `gym_env` passes `gymnasium.utils.env_checker`
 - [ ] Calibration artifacts versioned per season×track; 2026 fitted separately from 2024-25 (reg change)
+
+## Current Status Notes
+- Simulator, fixed strategies, Gym wrapper, calibration CLI, and validation-gate runner exist.
+- 2024 calibration artifacts exist under `data/calibration/2024/`.
+- Do not start phase 7 until a validation-gate report is generated under `plans/reports/` and passes thresholds.
 
 ## Risk Assessment
 - **Top project risk: fit quality.** Mitigations baked in: strict clean-lap filters (phase 3), robust regressors, sample-size floors, pooled priors, explicit gate with report.

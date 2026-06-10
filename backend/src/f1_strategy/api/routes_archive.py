@@ -1,5 +1,6 @@
 """Archive browse + telemetry REST endpoints. DataFrames → JSON records at the boundary."""
 
+import logging
 import math
 
 import numpy as np
@@ -7,9 +8,11 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 from f1_strategy.archive import queries
+from f1_strategy.archive.db import refresh_views
 from f1_strategy.archive.telemetry_service import get_lap_telemetry, get_track_outline
 
 router = APIRouter(prefix="/api", tags=["archive"])
+log = logging.getLogger(__name__)
 
 
 def _jsonable(v):
@@ -49,6 +52,22 @@ def events(year: int) -> list[dict]:
 @router.get("/sessions/{session_key}/laps")
 def laps(session_key: str) -> list[dict]:
     return _records(queries.get_laps(session_key))
+
+
+@router.post("/sessions/{session_key}/ensure")
+def ensure_session(session_key: str, force: bool = False) -> dict:
+    """Two-way data path: use archive if present, otherwise fetch this session from FastF1."""
+    try:
+        result = queries.ensure_session(session_key, force=force)
+        refresh_views()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        log.exception("session load failed: %s", session_key)
+        raise HTTPException(502, "session load failed") from exc
+    if result.get("status") == "available":
+        return result
+    raise HTTPException(502, result.get("error", f"session unavailable: {session_key}"))
 
 
 @router.get("/sessions/{session_key}/stints")

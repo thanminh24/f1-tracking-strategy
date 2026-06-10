@@ -22,6 +22,14 @@ async function getJson<T>(path: string): Promise<T> {
 export const api = {
   seasons: () => getJson<number[]>("/api/seasons"),
   events: (year: number) => getJson<EventRow[]>(`/api/events/${year}`),
+  ensureSession: (key: string) =>
+    fetch(`${API_BASE}/api/sessions/${key}/ensure`, {
+      method: "POST",
+      cache: "no-store",
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<{ session_key: string; status: string; source: string }>;
+    }),
   laps: (key: string) => getJson<LapRow[]>(`/api/sessions/${key}/laps`),
   stints: (key: string) => getJson<StintRow[]>(`/api/sessions/${key}/stints`),
   results: (key: string) => getJson<ResultRow[]>(`/api/sessions/${key}/results`),

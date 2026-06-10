@@ -41,10 +41,11 @@ archive/telemetry_service.py → get_telemetry(session_key, car_id, lap) via fas
 5. Tests against the real ingested archive (skip-if-missing marker for CI-less local runs).
 
 ## Success Criteria
-- [ ] All query functions return correct shapes for a known session (assert against published results, e.g. 2024 Bahrain winner/laps)
-- [ ] `stint_deg_dataset` excludes in/out/SC laps (spot-check counts)
+- [x] All query functions return correct shapes for a known session (assert against published results, e.g. 2024 Bahrain winner/laps)
+- [x] `stint_deg_dataset` excludes in/out/SC laps (spot-check counts)
 - [ ] Telemetry: first call fetches+caches; second call <50ms
 - [ ] Archive-wide query (all 2024-26 stints) <1s
+- [x] Saved DB build path exists: `make build-archive-db` / `scripts/build-archive-db.sh` materializes `data/archive.duckdb`
 
 ## Risk Assessment
 - Dirty data (red flags, crashes, missing laps) skews analytics → strict lap filters + per-track sample-size floor; surface n per fit.
