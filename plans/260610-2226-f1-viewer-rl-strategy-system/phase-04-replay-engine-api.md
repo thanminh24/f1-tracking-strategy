@@ -1,10 +1,11 @@
 ---
 phase: 4
-title: "Replay Engine + API"
-status: pending
+title: Replay Engine + API
+status: in-progress
 priority: P1
-effort: "4d"
-dependencies: [3]
+effort: 4d
+dependencies:
+  - 3
 ---
 
 # Phase 4: Replay Engine + API

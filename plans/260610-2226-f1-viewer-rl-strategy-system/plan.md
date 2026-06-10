@@ -3,7 +3,7 @@ title: F1 Viewer + RL Strategy System
 description: >-
   Local-first F1 viewer: 2024+ archive, replay engine, telemetry dashboard,
   lap-level race simulator, RL/ML strategy predictions (probabilistic)
-status: pending
+status: in-progress
 priority: P2
 branch: ''
 tags:
@@ -50,8 +50,8 @@ Key invariant: `RaceState` schema + tick protocol are series-agnostic — variab
 |-------|------|--------|
 | 1 | [Foundation: Scaffold](./phase-01-foundation-scaffold.md) | Completed |
 | 2 | [Ingestion](./phase-02-ingestion.md) | Completed |
-| 3 | [Archive](./phase-03-archive.md) | Pending |
-| 4 | [Replay Engine + API](./phase-04-replay-engine-api.md) | Pending |
+| 3 | [Archive](./phase-03-archive.md) | Completed |
+| 4 | [Replay Engine + API](./phase-04-replay-engine-api.md) | In Progress |
 | 5 | [Viewer Frontend](./phase-05-viewer-frontend.md) | Pending |
 | 6 | [Race Simulator + Calibration](./phase-06-race-simulator-calibration.md) | Pending |
 | 7 | [ML/RL Strategy Layer](./phase-07-ml-rl-strategy-layer.md) | Pending |

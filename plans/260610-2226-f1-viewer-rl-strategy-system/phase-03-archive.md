@@ -1,10 +1,11 @@
 ---
 phase: 3
-title: "Archive"
-status: pending
+title: Archive
+status: completed
 priority: P1
-effort: "2d"
-dependencies: [2]
+effort: 2d
+dependencies:
+  - 2
 ---
 
 # Phase 3: Archive
