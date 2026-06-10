@@ -49,7 +49,7 @@ Key invariant: `RaceState` schema + tick protocol are series-agnostic — variab
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | [Foundation: Scaffold](./phase-01-foundation-scaffold.md) | Completed |
-| 2 | [Ingestion](./phase-02-ingestion.md) | Pending |
+| 2 | [Ingestion](./phase-02-ingestion.md) | Completed |
 | 3 | [Archive](./phase-03-archive.md) | Pending |
 | 4 | [Replay Engine + API](./phase-04-replay-engine-api.md) | Pending |
 | 5 | [Viewer Frontend](./phase-05-viewer-frontend.md) | Pending |

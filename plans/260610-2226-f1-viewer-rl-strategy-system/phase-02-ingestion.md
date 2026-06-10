@@ -1,10 +1,11 @@
 ---
 phase: 2
-title: "Ingestion"
-status: pending
+title: Ingestion
+status: completed
 priority: P1
-effort: "3d"
-dependencies: [1]
+effort: 3d
+dependencies:
+  - 1
 ---
 
 # Phase 2: Ingestion
