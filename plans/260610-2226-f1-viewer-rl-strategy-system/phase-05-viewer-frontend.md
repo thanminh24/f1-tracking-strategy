@@ -1,10 +1,11 @@
 ---
 phase: 5
-title: "Viewer Frontend"
-status: pending
+title: Viewer Frontend
+status: completed
 priority: P2
-effort: "6d"
-dependencies: [4]
+effort: 6d
+dependencies:
+  - 4
 ---
 
 # Phase 5: Viewer Frontend

@@ -52,7 +52,7 @@ Key invariant: `RaceState` schema + tick protocol are series-agnostic — variab
 | 2 | [Ingestion](./phase-02-ingestion.md) | Completed |
 | 3 | [Archive](./phase-03-archive.md) | Completed |
 | 4 | [Replay Engine + API](./phase-04-replay-engine-api.md) | Completed |
-| 5 | [Viewer Frontend](./phase-05-viewer-frontend.md) | Pending |
+| 5 | [Viewer Frontend](./phase-05-viewer-frontend.md) | Completed |
 | 6 | [Race Simulator + Calibration](./phase-06-race-simulator-calibration.md) | Pending |
 | 7 | [ML/RL Strategy Layer](./phase-07-ml-rl-strategy-layer.md) | Pending |
 | 8 | [Strategy UI + What-If Explorer](./phase-08-strategy-ui-what-if-explorer.md) | Pending |

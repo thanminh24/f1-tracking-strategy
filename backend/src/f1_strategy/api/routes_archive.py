@@ -2,6 +2,7 @@
 
 import math
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
@@ -11,10 +12,26 @@ from f1_strategy.archive.telemetry_service import get_lap_telemetry, get_track_o
 router = APIRouter(prefix="/api", tags=["archive"])
 
 
+def _jsonable(v):
+    """numpy/pandas scalars + arrays + NaN/NaT → plain JSON-safe Python."""
+    if isinstance(v, np.ndarray):
+        return [_jsonable(x) for x in v.tolist()]
+    if isinstance(v, list):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, np.floating):
+        v = float(v)
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+    return v
+
+
 def _records(df: pd.DataFrame) -> list[dict]:
-    """NaN/NaT → None so JSON is valid."""
     return [
-        {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in row.items()}
+        {k: _jsonable(v) for k, v in row.items()}
         for row in df.astype(object).where(df.notna(), None).to_dict(orient="records")
     ]
 

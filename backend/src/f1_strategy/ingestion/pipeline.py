@@ -6,10 +6,12 @@ row counts + status; completed sessions are skipped unless force=True.
 
 import json
 import logging
+import time
 from datetime import UTC, datetime
 
 import fastf1
 import pandas as pd
+from fastf1.exceptions import RateLimitExceededError
 
 from f1_strategy.config import get_settings
 from f1_strategy.ingestion.extractors.laps import extract_laps
@@ -82,6 +84,8 @@ def ingest_session(year: int, round_num: int, code: str, force: bool = False) ->
             for name, df in entities.items()
         }
         result = {"session_key": session_key, "status": "ok", "rows": rows}
+    except RateLimitExceededError:
+        raise  # caller decides to wait+retry; no marker so resume retries it
     except Exception as exc:  # one bad session must not abort a backfill run
         log.exception("ingest failed: %s", session_key)
         result = {"session_key": session_key, "status": "error", "error": str(exc)}
@@ -127,13 +131,26 @@ def iter_past_sessions(year: int):
                 yield int(event["RoundNumber"]), code
 
 
+RATE_LIMIT_WAIT_S = 900  # FastF1 hard limit is 500 calls/h; wait 15 min then resume
+
+
+def _ingest_with_rate_limit_retry(year: int, round_num: int, code: str, force: bool) -> dict:
+    while True:
+        try:
+            return ingest_session(year, round_num, code, force=force)
+        except RateLimitExceededError:
+            log.warning("FastF1 rate limit hit — sleeping %ss", RATE_LIMIT_WAIT_S)
+            time.sleep(RATE_LIMIT_WAIT_S)
+
+
 def backfill(start_year: int = 2024, force: bool = False) -> list[dict]:
-    """Ingest every completed session from start_year through today. Resumable."""
+    """Ingest every completed session from start_year through today.
+    Resumable; sleeps through FastF1 rate-limit windows instead of dying."""
     results = []
     current_year = datetime.now(UTC).year
     for year in range(start_year, current_year + 1):
         for round_num, code in iter_past_sessions(year):
-            res = ingest_session(year, round_num, code, force=force)
+            res = _ingest_with_rate_limit_retry(year, round_num, code, force)
             log.info("%s: %s", res["session_key"], res["status"])
             results.append(res)
     return results
