@@ -1,10 +1,11 @@
 ---
 phase: 6
-title: "Race Simulator + Calibration"
-status: pending
+title: Race Simulator + Calibration
+status: in-progress
 priority: P1
-effort: "7d"
-dependencies: [3]
+effort: 7d
+dependencies:
+  - 3
 ---
 
 # Phase 6: Race Simulator + Calibration
