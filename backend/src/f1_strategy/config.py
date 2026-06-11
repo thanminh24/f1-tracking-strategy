@@ -23,6 +23,11 @@ class Settings(BaseSettings):
         return self.data_dir / "archive.duckdb"
 
     @property
+    def scratch_parquet_dir(self) -> Path:
+        """Purgeable tier for viewer-retrieved sessions; never used as archive."""
+        return self.data_dir / "scratch_parquet"
+
+    @property
     def fastf1_cache_dir(self) -> Path:
         return self.data_dir / "fastf1_cache"
 
@@ -41,6 +46,7 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         for p in (
             self.parquet_dir,
+            self.scratch_parquet_dir,
             self.fastf1_cache_dir,
             self.telemetry_cache_dir,
             self.calibration_dir,

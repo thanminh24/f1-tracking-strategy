@@ -23,6 +23,7 @@ from f1_strategy.ingestion.extractors.session_extras import (
 )
 from f1_strategy.ingestion.extractors.stints import extract_stints
 from f1_strategy.ingestion.parquet_writer import write_entity
+from f1_strategy.ingestion.scratch_tier import purge_scratch_session
 from f1_strategy.models.session_meta import make_session_key
 
 log = logging.getLogger(__name__)
@@ -59,12 +60,23 @@ def is_ingested(session_key: str) -> bool:
     return json.loads(mp.read_text()).get("status") == "ok"
 
 
-def ingest_session(year: int, round_num: int, code: str, force: bool = False) -> dict:
-    """Ingest one session. Returns {session_key, status, rows|error}."""
+def ingest_session(
+    year: int, round_num: int, code: str, force: bool = False, dest: str = "archive"
+) -> dict:
+    """Ingest one session into the archive (default) or the purgeable scratch tier.
+
+    Archive dest writes a resume marker and evicts any scratch copy of the same
+    session (the unioned views must never see duplicate rows). Scratch dest writes
+    no markers — scratch presence is checked purely on the file system.
+    Returns {session_key, status, rows|error}.
+    """
+    if dest not in ("archive", "scratch"):
+        raise ValueError(f"invalid dest: {dest}")
     session_key = make_session_key(year, round_num, code)
     if not force and is_ingested(session_key):
         return {"session_key": session_key, "status": "skipped"}
     _enable_cache()
+    root = get_settings().scratch_parquet_dir if dest == "scratch" else None
     try:
         session = fastf1.get_session(year, round_num, code)
         session.load(laps=True, telemetry=False, weather=True, messages=True)
@@ -79,8 +91,13 @@ def ingest_session(year: int, round_num: int, code: str, force: bool = False) ->
             "results": extract_results(session, session_key),
             "sessions": _session_meta_df(session, session_key, year, round_num, code),
         }
+        if dest == "archive":
+            # evict the scratch copy BEFORE archive writes: a partial write must
+            # never coexist with scratch partitions or the unioned views would
+            # return duplicate rows; scratch is re-fetchable on demand
+            purge_scratch_session(session_key)
         rows = {
-            name: write_entity(name, year, session_key, df, force=force)
+            name: write_entity(name, year, session_key, df, force=force, root=root)
             for name, df in entities.items()
         }
         result = {"session_key": session_key, "status": "ok", "rows": rows}
@@ -90,7 +107,8 @@ def ingest_session(year: int, round_num: int, code: str, force: bool = False) ->
         log.exception("ingest failed: %s", session_key)
         result = {"session_key": session_key, "status": "error", "error": str(exc)}
     result["ingested_at"] = datetime.now(UTC).isoformat()
-    _marker_path(session_key).write_text(json.dumps(result, indent=1))
+    if dest == "archive":
+        _marker_path(session_key).write_text(json.dumps(result, indent=1))
     return result
 
 

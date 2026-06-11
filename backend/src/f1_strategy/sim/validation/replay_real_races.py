@@ -88,17 +88,29 @@ def validate_race(session_key: str) -> RaceValidation | None:
     res = sim.run()
 
     laps = queries.get_laps(session_key)
-    real_total = laps.groupby("car_id")["lap_time_ms"].sum()
+    sc_lap_set = set(real_sc_laps(session_key))
     errs, rmses = [], []
     for j, cid in enumerate(car_ids):
-        if cid in real_total.index:
-            errs.append(abs(res.cum_time_ms[0, j] - real_total[cid]) / 1000)
         real_car = laps[laps["car_id"] == cid].sort_values("lap_number")
         rl = real_car["lap_time_ms"].to_numpy(dtype=float)[: params.total_laps]
         sl = res.lap_times_ms[: len(rl), 0, j]
         ok = ~np.isnan(rl)
+        # race-time error over the SAME laps on both sides — summing real laps
+        # with NaN gaps against the full sim total would bias by ~a lap per gap
         if ok.sum() > 10:
-            rmses.append(np.sqrt(np.mean((rl[ok] - sl[ok]) ** 2)) / 1000)
+            errs.append(abs(sl[ok].sum() - rl[ok].sum()) / 1000)
+        # stint-level RMSE on clean green laps only (per gate spec): exclude lap 1,
+        # SC laps, and pit in/out laps — the sim lumps the whole pit loss into one
+        # lap by design while reality splits it across in-lap + out-lap; total pit
+        # cost is already judged by the race-time metric above
+        lap_nums = real_car["lap_number"].to_numpy(dtype=float)[: params.total_laps]
+        pit_laps = set(real_car.loc[real_car["pit_in_ms"].notna(), "lap_number"].astype(int))
+        pit_affected = pit_laps | {lp + 1 for lp in pit_laps}
+        clean = ok & np.array(
+            [n > 1 and n not in sc_lap_set and n not in pit_affected for n in lap_nums]
+        )
+        if clean.sum() > 10:
+            rmses.append(np.sqrt(np.mean((rl[clean] - sl[clean]) ** 2)) / 1000)
 
     real_pos = {str(r["car_id"]): int(r["position"]) for _, r in finished.iterrows()}
     sim_pos = [int(res.positions[0, j]) for j in range(len(car_ids))]

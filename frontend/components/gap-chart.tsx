@@ -1,8 +1,10 @@
 "use client";
 // Gap-to-leader vs lap, computed once from archived laps (seek-safe),
-// with a moving "now" marker from the live tick.
+// with a moving "now" marker from the live tick and probability-shaded
+// pit-window bands (field-aggregate P(any pit) per lap) from predictions.
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api-client";
+import { usePredictionStore } from "../lib/prediction-store";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
 import type { LapRow } from "../lib/types";
@@ -58,19 +60,41 @@ const W = 600, H = 260, PAD = 30;
 export function GapChart({ sessionKey }: { sessionKey: string }) {
   const [laps, setLaps] = useState<LapRow[]>([]);
   const currentLap = useRaceStateStore((s) => s.state?.leader_lap ?? 0);
+  const prediction = usePredictionStore((s) => s.prediction);
   useEffect(() => {
     api.laps(sessionKey).then(setLaps).catch(() => setLaps([]));
   }, [sessionKey]);
 
   const chart = useMemo(() => (laps.length ? buildSeries(laps) : null), [laps]);
+
+  // field-aggregate pit probability per future lap → band opacity (probabilistic copy)
+  const pitBands = useMemo(() => {
+    if (!prediction) return new Map<number, number>();
+    const agg = new Map<number, number>();
+    for (const car of prediction.cars) {
+      for (const [lapStr, p] of Object.entries(car.pit_window_probs)) {
+        const lap = Number(lapStr);
+        agg.set(lap, 1 - (1 - (agg.get(lap) ?? 0)) * (1 - p)); // P(any car pits)
+      }
+    }
+    return agg;
+  }, [prediction]);
+
   if (!chart) return <div className="text-zinc-600 text-sm p-4">gap chart loading…</div>;
 
   const x = (lap: number) => PAD + ((lap - 1) / Math.max(chart.maxLap - 1, 1)) * (W - 2 * PAD);
   const y = (gap: number) => PAD + (Math.min(gap, chart.maxGap) / chart.maxGap) * (H - 2 * PAD);
+  const bandW = (W - 2 * PAD) / Math.max(chart.maxLap - 1, 1);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
       <text x={PAD} y={14} fontSize={10} fill="#71717a">gap to leader (s) — down = further back</text>
+      {[...pitBands.entries()].map(([lap, p]) => (
+        <rect key={lap} x={x(lap) - bandW / 2} y={PAD} width={bandW} height={H - 2 * PAD}
+          fill="#38bdf8" opacity={Math.min(p, 1) * 0.25}>
+          <title>{`P(any pit on lap ${lap}) = ${Math.round(p * 100)}%`}</title>
+        </rect>
+      ))}
       {chart.series.map((s) => (
         <polyline
           key={s.carId}

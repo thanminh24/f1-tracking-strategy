@@ -42,6 +42,10 @@ class RaceSim:
         policy: PolicyFn | None = None,
         policy_car: str | None = None,
         record_laps: bool = False,
+        start_lap: int = 0,  # mid-race start: laps 1..start_lap already run
+        init_cum_ms: np.ndarray | None = None,  # (C,) cumulative time at start_lap
+        init_compound: np.ndarray | None = None,  # (C,) COMPOUND_IDX values
+        init_age: np.ndarray | None = None,  # (C,) tire age in laps
     ):
         self.p = params
         self.car_ids = car_ids
@@ -54,6 +58,10 @@ class RaceSim:
         self.policy = policy
         self.policy_idx = car_ids.index(policy_car) if policy_car else None
         self.record_laps = record_laps
+        self.start_lap = start_lap
+        self.init_cum_ms = init_cum_ms
+        self.init_compound = init_compound
+        self.init_age = init_age
         self.grid = np.array([grid_positions.get(c, self.n_cars) for c in car_ids], dtype=float)
 
         # per-car static arrays
@@ -69,16 +77,21 @@ class RaceSim:
 
     def run(self) -> SimResult:
         R, C, L = self.n_rollouts, self.n_cars, self.p.total_laps
-        cum = np.tile((self.grid - 1) * GRID_SLOT_MS, (R, 1))
-        compound = np.zeros((R, C), dtype=int)
-        for j, cid in enumerate(self.car_ids):
-            compound[:, j] = COMPOUND_IDX.get(self.strategies[cid].start_compound, 1)
-        age = np.zeros((R, C))
+        if self.init_cum_ms is not None:  # mid-race start (MC engine / what-if)
+            cum = np.tile(self.init_cum_ms.astype(float), (R, 1))
+            compound = np.tile(self.init_compound.astype(int), (R, 1))
+            age = np.tile(self.init_age.astype(float), (R, 1))
+        else:
+            cum = np.tile((self.grid - 1) * GRID_SLOT_MS, (R, 1))
+            compound = np.zeros((R, C), dtype=int)
+            for j, cid in enumerate(self.car_ids):
+                compound[:, j] = COMPOUND_IDX.get(self.strategies[cid].start_compound, 1)
+            age = np.zeros((R, C))
         sc_remaining = np.zeros(R, dtype=int)
         sc_laps = np.zeros((R, L), dtype=bool)
         lap_log = np.zeros((L, R, C)) if self.record_laps else None
 
-        for lap in range(1, L + 1):
+        for lap in range(self.start_lap + 1, L + 1):
             # --- SC process -------------------------------------------------
             if self.sc_override is not None:
                 sc_active = np.full(R, lap in self.sc_override)

@@ -2,16 +2,24 @@
 
 Each subscriber gets an asyncio.Queue of JSON-ready dicts. The pump task runs the
 ReplaySource tick loop once and broadcasts; auto-teardown when the last client leaves.
+Predictions (phase 7) are computed off-thread once per completed lap and multiplexed
+into the same stream as {"type": "predictions"}; absent models degrade silently.
 """
 
 import asyncio
 import logging
+import os
 
 from f1_strategy.replay.replay_source import ReplaySource, build_timeline
+from f1_strategy.strategy.prediction_service import PredictionService
 
 log = logging.getLogger(__name__)
 
 QUEUE_MAX = 60  # ~1 min of ticks; slow clients drop oldest rather than stall others
+
+
+def _predictions_enabled() -> bool:
+    return os.environ.get("F1_PREDICTIONS", "1") != "0"
 
 
 class ReplaySession:
@@ -20,6 +28,10 @@ class ReplaySession:
         self.source = ReplaySource(build_timeline(session_key))
         self.subscribers: set[asyncio.Queue] = set()
         self.pump_task: asyncio.Task | None = None
+        self.predictor = PredictionService(session_key) if _predictions_enabled() else None
+        self._pred_lap = -1
+        self._pred_task: asyncio.Task | None = None
+        self.last_prediction: dict | None = None  # snapshot for late joiners
 
     def start(self) -> None:
         self.pump_task = asyncio.create_task(self._pump())
@@ -32,8 +44,30 @@ class ReplaySession:
                 self._broadcast(
                     {"type": "replay_status", "data": self.source.status().model_dump()}
                 )
+                self._maybe_predict(state)
         except Exception:
             log.exception("replay pump died: %s", self.session_key)
+
+    def _maybe_predict(self, state) -> None:
+        """Kick one off-thread prediction per new lap; skip while one is in flight."""
+        if (
+            self.predictor is None or not self.predictor.available
+            or state.leader_lap == self._pred_lap
+            or (self._pred_task is not None and not self._pred_task.done())
+        ):
+            return
+        self._pred_lap = state.leader_lap
+        self._pred_task = asyncio.create_task(self._predict_and_broadcast(state))
+
+    async def _predict_and_broadcast(self, state) -> None:
+        try:
+            pred = await asyncio.to_thread(self.predictor.predict, state)
+        except Exception:
+            log.exception("prediction failed: %s lap %s", self.session_key, state.leader_lap)
+            return
+        if pred is not None:
+            self.last_prediction = {"type": "predictions", "data": pred.model_dump(mode="json")}
+            self._broadcast(self.last_prediction)
 
     def _broadcast(self, msg: dict) -> None:
         for q in self.subscribers:
@@ -49,6 +83,8 @@ class ReplaySession:
             {"type": "race_state", "data": self.source.current_state().model_dump(mode="json")}
         )
         q.put_nowait({"type": "replay_status", "data": self.source.status().model_dump()})
+        if self.last_prediction is not None:
+            q.put_nowait(self.last_prediction)
         return q
 
     def unsubscribe(self, q: asyncio.Queue) -> None:

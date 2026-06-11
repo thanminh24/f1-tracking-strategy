@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: Race Simulator + Calibration
-status: in-progress
+status: completed
 priority: P1
 effort: 7d
 dependencies:
@@ -56,7 +56,7 @@ sim/validation/replay_real_races.py → validation gate runner
 7. `gym_env.py`: obs = [race_frac, position_norm, gap_ahead/behind, tire_age_norm, compound one-hot, deg_rate, track_status, top-k rivals' (gap, tire_age, compound)]; action = {stay, pit_soft, pit_med, pit_hard, pit_inter, pit_wet}; reward = -Δ(expected finish position) shaping + terminal position bonus; invalid actions masked (compound availability rules).
 
 ## Success Criteria
-- [ ] Validation gate report exists with all 3 metrics ≥ thresholds on held-out races
+- [x] Validation gate report exists with all 3 metrics ≥ thresholds — single-race run (user-approved scope 260611): `plans/reports/sim-validation-gate-260611-0754-single-race-bahrain-2024-report.md`; full held-out gate re-run REQUIRED after archive backfill
 - [x] ≥200 rollouts/sec benchmark recorded in `backend/tests/sim/test_race_sim_and_gym_env.py`
 - [x] Same seed → identical rollout (determinism test)
 - [x] `gym_env` passes `gymnasium.utils.env_checker`

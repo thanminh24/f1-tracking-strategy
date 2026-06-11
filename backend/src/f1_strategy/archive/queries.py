@@ -8,6 +8,7 @@ import pandas as pd
 from f1_strategy.archive.db import query_df
 from f1_strategy.config import get_settings
 from f1_strategy.ingestion.pipeline import ingest_session
+from f1_strategy.ingestion.scratch_tier import session_in_scratch
 from f1_strategy.models.session_meta import (
     canonical_session_key,
     make_session_key,
@@ -15,28 +16,45 @@ from f1_strategy.models.session_meta import (
 )
 
 
-def _entity_partition(entity: str, session_key: str) -> Path:
+def _entity_partition(entity: str, session_key: str, root: Path | None = None) -> Path:
     canonical = canonical_session_key(session_key)
     year, _, _ = parse_session_key(canonical)
-    return get_settings().parquet_dir / entity / f"year={year}" / f"session_key={canonical}"
+    root = root if root is not None else get_settings().parquet_dir
+    return root / entity / f"year={year}" / f"session_key={canonical}"
 
 
-def session_has_laps(session_key: str) -> bool:
-    """Fast file-system check used before DuckDB views are queried."""
+def session_in_archive(session_key: str) -> bool:
+    """Fast file-system check against the durable archive tier."""
     return (_entity_partition("laps", session_key) / "data.parquet").exists()
 
 
+def session_has_laps(session_key: str) -> bool:
+    """Session is locally servable from either tier (archive or scratch)."""
+    return session_in_archive(session_key) or session_in_scratch(
+        canonical_session_key(session_key)
+    )
+
+
 def ensure_session(session_key: str, force: bool = False) -> dict:
-    """Ensure a session exists in the local Parquet lake, ingesting it on demand if needed."""
+    """Make a session locally servable WITHOUT growing the archive (retrieve-only).
+
+    Order: archive hit → scratch hit → fetch from FastF1 into the scratch tier.
+    The archive grows only via the explicit ingest CLI; `force` re-fetches the
+    scratch copy but never overrides an archived session (repairs go through
+    `f1-ingest --force`).
+    """
     year, round_num, session = parse_session_key(session_key)
     canonical = make_session_key(year, round_num, session)
-    if not force and session_has_laps(canonical):
+    if session_in_archive(canonical):
         return {"session_key": canonical, "status": "available", "source": "archive"}
+    if not force and session_in_scratch(canonical):
+        return {"session_key": canonical, "status": "available", "source": "scratch"}
 
-    result = ingest_session(year, round_num, session, force=force)
+    result = ingest_session(year, round_num, session, force=force, dest="scratch")
     if result["status"] == "ok":
         return {"session_key": canonical, "status": "available", "source": "fastf1"}
-    if result["status"] == "skipped" and session_has_laps(canonical):
+    if result["status"] == "skipped" and session_in_archive(canonical):
+        # archive marker exists (ingest CLI completed it) — serve from archive
         return {"session_key": canonical, "status": "available", "source": "archive"}
     return result
 

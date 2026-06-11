@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { GapChart } from "../../../components/gap-chart";
 import { PlaybackControls } from "../../../components/playback-controls";
 import { StintBars } from "../../../components/stint-bars";
+import { StrategyPanel } from "../../../components/strategy-overlay/strategy-panel";
 import { TimingTower } from "../../../components/timing-tower";
 import { TrackMap } from "../../../components/track-map";
 import { ReplayWsClient } from "../../../lib/ws-replay-client";
@@ -32,6 +33,7 @@ export function ReplayDashboard({ sessionKey }: { sessionKey: string }) {
           <div className="border border-zinc-800 rounded-lg py-2">
             <TimingTower />
           </div>
+          <StrategyPanel sessionKey={sessionKey} />
           <div className="border border-zinc-800 rounded-lg p-3">
             <div className="text-xs uppercase text-zinc-500 mb-2">stints</div>
             <StintBars sessionKey={sessionKey} />

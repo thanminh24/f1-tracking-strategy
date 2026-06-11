@@ -4,12 +4,19 @@ import argparse
 import logging
 
 from f1_strategy.archive.db import query_df
+from f1_strategy.ingestion.scratch_tier import session_in_any_scratch
 from f1_strategy.sim.calibration.fit_lap_time_model import fit_circuit_season
 
 log = logging.getLogger(__name__)
 
 
 def calibrate(season: int | None = None, circuit: str | None = None) -> list[str]:
+    if session_in_any_scratch():
+        log.warning(
+            "scratch tier (data/scratch_parquet) is non-empty: viewer-retrieved "
+            "sessions WILL be included in calibration fits. Run `make clean-scratch` "
+            "first if models should train on deliberately archived data only."
+        )
     sql = "SELECT DISTINCT s.year AS season, circuit FROM sessions s WHERE session_type='R'"
     params: list = []
     if season:

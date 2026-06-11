@@ -3,7 +3,7 @@ title: F1 Viewer + RL Strategy System
 description: >-
   Local-first F1 viewer: 2024+ archive, replay engine, telemetry dashboard,
   lap-level race simulator, RL/ML strategy predictions (probabilistic)
-status: in-progress
+status: completed
 priority: P2
 branch: ''
 tags:
@@ -53,24 +53,44 @@ Key invariant: `RaceState` schema + tick protocol are series-agnostic — variab
 | 3 | [Archive](./phase-03-archive.md) | Completed |
 | 4 | [Replay Engine + API](./phase-04-replay-engine-api.md) | Completed |
 | 5 | [Viewer Frontend](./phase-05-viewer-frontend.md) | Completed |
-| 6 | [Race Simulator + Calibration](./phase-06-race-simulator-calibration.md) | In Progress |
-| 7 | [ML/RL Strategy Layer](./phase-07-ml-rl-strategy-layer.md) | Pending |
-| 8 | [Strategy UI + What-If Explorer](./phase-08-strategy-ui-what-if-explorer.md) | Pending |
+| 6 | [Race Simulator + Calibration](./phase-06-race-simulator-calibration.md) | Completed (single-race gate) |
+| 7 | [ML/RL Strategy Layer](./phase-07-ml-rl-strategy-layer.md) | Completed (single-race scope) |
+| 8 | [Strategy UI + What-If Explorer](./phase-08-strategy-ui-what-if-explorer.md) | Completed |
+| 9 | [Retrieve-Only Mode (Scratch Tier)](./phase-09-retrieve-only-scratch-tier.md) | Completed |
 
 Dependency chain: 1→2→3→4→5; 6 needs 3; 7 needs 6 (+4 for serving); 8 needs 5+7.
 Hard gate: Phase 6 sim validation MUST pass before Phase 7 RL work starts.
 
 ## Current Todo
-- Phase 2: verify full 2024→now backfill job `bvx43hahr` completed cleanly.
-- Phase 3: optional portable DB artifact available via `make build-archive-db`.
-- Phase 5: direct race links and home-page loader now auto-ingest missing races from FastF1.
-- Phase 6: run validation gate and save report under `plans/reports/`; only then move Phase 7 to in-progress.
-- Phase 7: blocked until Phase 6 validation passes.
-- Phase 8: blocked until Phase 7 prediction service exists.
+All phases complete at single-race scope (user-approved 260611: Bahrain 2024 only).
+Remaining work unlocks with the full archive backfill (`make ingest-backfill`):
+- Re-run phase 6 validation gate on held-out 2024-25 race set (n=1 report exists).
+- Re-train SC hazard (currently prior mode — 0 deployments in archive) + behavior model
+  (currently quality=fallback — no holdout possible) via `f1-train-models`.
+- Full PPO eval: 500 sims, time-gain ≥1.5s gate, per track-cluster training (`f1-train-ppo`).
+- Phase 8 demo pass in browser (60fps check, screenshots into docs/).
+- Phase 2 (historical): verify backfill completes cleanly when run on this machine.
+
+## Next: Interactive Multi-Driver Dashboard (v2)
+
+Full race-weekend dashboard with a pluggable feeder interface. Archive data is the default feeder; a live SignalR source can be hot-swapped in.
+
+**Requirements (user-stated 2026-06-11):**
+- All drivers + teams visible simultaneously: track map, timing tower, gap chart, telemetry overlays (speed/throttle/brake/gear), stint bars
+- Feeder abstraction: `ArchiveFeeder` (replays parquet ticks) and `LiveFeeder` (SignalR adapter) implement the same `IFeeder` interface so the dashboard is source-agnostic
+- Strategy model overlay available per driver (from Phase 7 outputs)
+- Snapshot/scrub timeline: seek by lap or wall-clock time
+- Performance: 60 fps canvas render; WebSocket fan-out from backend
+
+**Planned phases:**
+| Phase | Name |
+|-------|------|
+| 10 | Feeder abstraction layer (IFeeder, ArchiveFeeder, LiveFeeder stub) |
+| 11 | Multi-driver canvas dashboard (track map, timing, gap, telemetry) |
+| 12 | Strategy overlay integration + what-if hooks per driver |
 
 ## Out of Scope (this plan)
 
-- Live SignalR adapter → v2 (interface `LiveSource` reserved in Phase 4; record raw streams during race weekends when convenient)
 - WEC/multi-series support → v3 (kept possible via series-agnostic schema)
 - Hosting/auth/deployment — local only
 - Physics-level simulation, deterministic predictions

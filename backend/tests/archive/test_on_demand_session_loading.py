@@ -1,4 +1,5 @@
-"""On-demand session loading uses archive first, FastF1 only when needed."""
+"""On-demand session loading: archive first, then scratch, FastF1 fetch (into the
+purgeable scratch tier — never the archive) only when neither tier has the session."""
 
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -15,7 +16,7 @@ def test_ensure_session_uses_existing_archive(monkeypatch):
         called = True
         raise AssertionError("ingest should not run")
 
-    monkeypatch.setattr(queries, "session_has_laps", lambda key: True)
+    monkeypatch.setattr(queries, "session_in_archive", lambda key: True)
     monkeypatch.setattr(queries, "ingest_session", fail_ingest)
 
     result = queries.ensure_session("2024_1_R")
@@ -24,25 +25,48 @@ def test_ensure_session_uses_existing_archive(monkeypatch):
     assert not called
 
 
-def test_ensure_session_ingests_when_archive_missing(monkeypatch):
-    checks = iter([False])
-    monkeypatch.setattr(queries, "session_has_laps", lambda key: next(checks, True))
+def test_ensure_session_serves_existing_scratch_copy(monkeypatch):
+    monkeypatch.setattr(queries, "session_in_archive", lambda key: False)
+    monkeypatch.setattr(queries, "session_in_scratch", lambda key: True)
     monkeypatch.setattr(
-        queries,
-        "ingest_session",
-        lambda year, round_num, session, force=False: {
-            "session_key": f"{year}_{round_num}_{session}",
-            "status": "ok",
-        },
+        queries, "ingest_session", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
     )
 
     result = queries.ensure_session("2024_1_R")
 
+    assert result == {"session_key": "2024_1_R", "status": "available", "source": "scratch"}
+
+
+def test_ensure_session_fetches_into_scratch_when_missing(monkeypatch):
+    captured = {}
+
+    def fake_ingest(year, round_num, session, force=False, dest="archive"):
+        captured["dest"] = dest
+        return {"session_key": f"{year}_{round_num}_{session}", "status": "ok"}
+
+    monkeypatch.setattr(queries, "session_in_archive", lambda key: False)
+    monkeypatch.setattr(queries, "session_in_scratch", lambda key: False)
+    monkeypatch.setattr(queries, "ingest_session", fake_ingest)
+
+    result = queries.ensure_session("2024_1_R")
+
     assert result == {"session_key": "2024_1_R", "status": "available", "source": "fastf1"}
+    assert captured["dest"] == "scratch"  # viewer fetch must never grow the archive
+
+
+def test_ensure_session_force_never_overrides_archive(monkeypatch):
+    monkeypatch.setattr(queries, "session_in_archive", lambda key: True)
+    monkeypatch.setattr(
+        queries, "ingest_session", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+
+    result = queries.ensure_session("2024_1_R", force=True)
+
+    assert result["source"] == "archive"
 
 
 def test_ensure_session_canonicalizes_key(monkeypatch):
-    monkeypatch.setattr(queries, "session_has_laps", lambda key: key == "2024_1_R")
+    monkeypatch.setattr(queries, "session_in_archive", lambda key: key == "2024_1_R")
 
     result = queries.ensure_session("2024_01_r")
 

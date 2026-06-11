@@ -11,12 +11,16 @@ dependencies = [
     "duckdb>=1.5.3",
     "fastapi>=0.136.3",
     "fastf1>=3.8.3",
-    "gymnasium>=1.3.0",
+    # <1.3 ceiling comes from stable-baselines3; our env uses only the stable Gym API
+    "gymnasium>=1.2",
+    "lightgbm>=4.6.0",
     "pandas>=2.3.3",
     "pyarrow>=24.0.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "scikit-learn>=1.9.0",
     "scipy>=1.17.1",
+    "stable-baselines3>=2.4",
     "uvicorn[standard]>=0.49.0",
 ]
 
@@ -24,6 +28,8 @@ dependencies = [
 f1-ingest = "f1_strategy.ingestion.cli:main"
 f1-build-archive-db = "f1_strategy.archive.build_db:main"
 f1-calibrate = "f1_strategy.sim.calibration.cli:main"
+f1-train-models = "f1_strategy.strategy.train_models_cli:main"
+f1-train-ppo = "f1_strategy.strategy.ppo_agent.train:main"
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]

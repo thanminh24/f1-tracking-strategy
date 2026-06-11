@@ -46,7 +46,8 @@ export interface ReplayStatus {
 
 export type WsMessage =
   | { type: "race_state"; data: RaceState }
-  | { type: "replay_status"; data: ReplayStatus };
+  | { type: "replay_status"; data: ReplayStatus }
+  | { type: "predictions"; data: import("./prediction-types").PredictionSet };
 
 export interface EventRow {
   round: number;

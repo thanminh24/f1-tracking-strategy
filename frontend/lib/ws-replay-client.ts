@@ -1,5 +1,6 @@
-// Typed replay WebSocket client with auto-reconnect; pushes into the zustand store.
+// Typed replay WebSocket client with auto-reconnect; pushes into the zustand stores.
 import { WS_BASE } from "./api-client";
+import { usePredictionStore } from "./prediction-store";
 import { useRaceStateStore } from "./race-state-store";
 import type { WsMessage } from "./types";
 
@@ -28,6 +29,8 @@ export class ReplayWsClient {
       const msg: WsMessage = JSON.parse(ev.data);
       if (msg.type === "race_state") store.setState(msg.data);
       else if (msg.type === "replay_status") store.setStatus(msg.data);
+      else if (msg.type === "predictions")
+        usePredictionStore.getState().setPrediction(msg.data);
     };
     this.ws.onclose = () => {
       store.setConnected(false);
@@ -49,5 +52,6 @@ export class ReplayWsClient {
     this.closed = true;
     this.ws?.close();
     useRaceStateStore.getState().reset();
+    usePredictionStore.getState().reset();
   }
 }

@@ -1,4 +1,4 @@
-"""CLI: f1-ingest --year 2024 [--round 1] [--session R] | --backfill [--force]."""
+"""CLI: f1-ingest --year 2024 [--round 1] [--session R] | --backfill | --purge-scratch."""
 
 import argparse
 import json
@@ -6,6 +6,7 @@ import logging
 import sys
 
 from f1_strategy.ingestion.pipeline import backfill, ingest_session, iter_past_sessions
+from f1_strategy.ingestion.scratch_tier import purge_scratch
 
 
 def main() -> None:
@@ -16,7 +17,17 @@ def main() -> None:
     parser.add_argument("--session", help="session code: FP1 FP2 FP3 Q SQ SS S R")
     parser.add_argument("--backfill", action="store_true", help="ingest 2024 → today")
     parser.add_argument("--force", action="store_true", help="re-ingest even if done")
+    parser.add_argument(
+        "--purge-scratch",
+        action="store_true",
+        help="drop the purgeable scratch tier (viewer-retrieved sessions)",
+    )
     args = parser.parse_args()
+
+    if args.purge_scratch:
+        removed = purge_scratch()
+        print(f"scratch tier purged: {removed} entity partitions removed")
+        return
 
     if args.backfill:
         results = backfill(force=args.force)

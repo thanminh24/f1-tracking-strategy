@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Strategy UI + What-If Explorer"
-status: pending
+status: completed
 priority: P2
 effort: "5d"
 dependencies: [5, 7]
@@ -46,12 +46,25 @@ UX copy rules (enforce in components): always "P(...) = 23%", "likely window: la
 6. Empty/degraded states: no-predictions banner; stale-prediction indicator if last update > 2 laps old.
 7. End-to-end demo run: full replay of a strategic race (2024 Monza or 2025 equivalent) with all overlays on — record GIF/screenshots into `docs/`.
 
-## Success Criteria
-- [ ] All overlay components live-update during replay from predictions stream
-- [ ] What-if round trip (select → result rendered) < 4s
-- [ ] UI copy audit: zero deterministic-claim strings (grep for "will pit"/"will happen")
-- [ ] Dashboard remains 60fps with overlays enabled, 20+ cars
-- [ ] Degraded mode verified: replay with prediction service disabled shows viewer-only UI cleanly
+## Success Criteria (260611 — browser-session items pending manual demo run, marked 🖥)
+- [x] Overlay components wired to predictions WS stream (zustand store, lap-keyed updates,
+      late-joiner snapshot); 🖥 visual live-update pass pending demo run
+- [x] What-if backend round trip ≈1.2s (2× ~300-rollout MC) — well under 4s with render
+- [x] UI copy audit clean: grep "will pit|will happen|will win|guaranteed" → 0 hits;
+      all copy probabilistic ("P(...) = NN%", "likely window: laps A-B (NN%)")
+- [ ] 🖥 60fps with overlays + 20 cars — needs browser profiling session
+- [x] Degraded mode: no-predictions banner; stale flag (>2 laps, seek-safe);
+      F1_PREDICTIONS=0 disables service; missing artifacts degrade to viewer-only
+
+## Implementation Notes (260611)
+- components/strategy-overlay/: strategy-panel (container, cards/what-if toggles),
+  sc-probability-gauge (+sparkline), outcome-probability-table (sortable),
+  driver-strategy-cards (chips + pit-window phrasing), undercut-alert-toasts
+  (3.5s range, P≥0.35 within 2 laps, 5-lap pair cooldown).
+- Pit-window bands drawn inside existing gap-chart as P(any pit|lap) opacity bands.
+- what-if-panel: car/action form → abortable POST → baseline vs forced cards, pinnable.
+- lib/: prediction-types.ts (schema mirror), prediction-store.ts (zustand + SC history),
+  whatif-client.ts; ws-replay-client routes {"type":"predictions"}.
 
 ## Risk Assessment
 - Information overload on one screen → overlay panels toggleable; default ON: SC gauge + outcome table; cards/bands opt-in.

@@ -27,9 +27,16 @@ cd frontend && npm install
 make dev          # backend :8000 + frontend :3000
 make test         # backend pytest
 make lint         # ruff
-make ingest ARGS="--year 2024 --round 1"   # ingest one weekend
+make ingest ARGS="--year 2024 --round 1"   # ingest one weekend into the archive
 make ingest-backfill                        # full 2024→now archive (long; ~5GB)
+make clean-scratch                          # drop viewer-retrieved sessions
 ```
+
+Races opened through the viewer are **retrieve-only**: fetched from FastF1 into a
+purgeable scratch tier (`data/scratch_parquet/`) — the durable archive
+(`data/parquet/`) grows only via the explicit `make ingest` / backfill CLI.
+Archive ingest evicts any scratch copy of the same session. Purge scratch before
+calibration runs (phase 6+) so models train on deliberately archived data only.
 
 ## Project docs
 

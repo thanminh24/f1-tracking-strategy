@@ -28,7 +28,9 @@ export function LoadRaceForm() {
 
   return (
     <form onSubmit={loadRace} className="border border-zinc-800 rounded-lg p-4 space-y-3">
-      <div className="text-xs uppercase text-zinc-500">load race from FastF1</div>
+      <div className="text-xs uppercase text-zinc-500">
+        load race from FastF1 — view only, not archived
+      </div>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
         <label className="text-sm text-zinc-400">
           <span className="block mb-1">Year</span>
