@@ -37,4 +37,6 @@ export const api = {
     getJson<OutlinePoint[]>(`/api/sessions/${key}/track-outline`),
   telemetry: (key: string, carId: string, lap: number) =>
     getJson<TelemetrySample[]>(`/api/sessions/${key}/telemetry/${carId}/${lap}`),
+  liveSession: () =>
+    getJson<{ session_key: string | null; openf1_key: number | null; status: string; session_type?: string; circuit?: string; year?: number }>("/api/live/current-session"),
 };

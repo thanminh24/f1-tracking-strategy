@@ -1,17 +1,21 @@
 "use client";
-// Play/pause/speed/seek controls wired to WS control messages. Space = play/pause.
+// Playback controls: play/pause, speed, seek bar. Space = play/pause.
+// Hidden in live mode (no playback concept). Source toggle embedded here.
 import { useEffect } from "react";
+import type { FeederClient } from "../lib/feeder-client";
 import { useRaceStateStore } from "../lib/race-state-store";
-import type { ReplayWsClient } from "../lib/ws-replay-client";
+import { SourceToggle } from "./layout/source-toggle";
 
 const SPEEDS = [1, 2, 5, 10, 25, 100];
 
-export function PlaybackControls({ client }: { client: ReplayWsClient }) {
+export function PlaybackControls({ client }: { client: FeederClient }) {
   const status = useRaceStateStore((s) => s.status);
   const state = useRaceStateStore((s) => s.state);
-  const connected = useRaceStateStore((s) => s.connected);
+  const source = useRaceStateStore((s) => s.source);
+  const isLive = source === "live";
 
   useEffect(() => {
+    if (isLive) return; // no keyboard controls in live mode
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Space" && (e.target as HTMLElement)?.tagName !== "INPUT") {
         e.preventDefault();
@@ -20,54 +24,66 @@ export function PlaybackControls({ client }: { client: ReplayWsClient }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [client, status?.playing]);
+  }, [client, status?.playing, isLive]);
 
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
-      <button
-        className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 font-bold"
-        onClick={() => client.control(status?.playing ? "pause" : "play")}
-      >
-        {status?.playing ? "⏸" : "▶"}
-      </button>
-      <div className="flex gap-1">
-        {SPEEDS.map((s) => (
+    <div className="flex items-center gap-2 text-xs h-9 px-1">
+      {/* Source toggle — always visible */}
+      <SourceToggle client={client} />
+
+      {/* Divider */}
+      <div className="w-px h-5 bg-f1-border shrink-0" />
+
+      {/* Playback controls hidden in live mode */}
+      {!isLive && (
+        <>
           <button
-            key={s}
-            onClick={() => client.control("speed", s)}
-            className={`px-2 py-0.5 rounded text-xs ${
-              status?.speed === s ? "bg-zinc-200 text-black" : "bg-zinc-800 hover:bg-zinc-700"
-            }`}
+            className="w-7 h-7 flex items-center justify-center rounded bg-f1-panel border border-f1-border hover:border-f1-red hover:text-f1-text transition-colors font-bold text-f1-text"
+            onClick={() => client.control(status?.playing ? "pause" : "play")}
+            title="Space to play/pause"
           >
-            {s}×
+            {status?.playing ? "⏸" : "▶"}
           </button>
-        ))}
-      </div>
-      {state?.total_laps && (
-        <input
-          type="range"
-          min={1}
-          max={state.total_laps}
-          value={state.leader_lap}
-          onChange={(e) => client.control("seek", Number(e.target.value))}
-          className="flex-1 accent-zinc-300"
-        />
+
+          <div className="flex gap-1">
+            {SPEEDS.map((s) => (
+              <button
+                key={s}
+                onClick={() => client.control("speed", s)}
+                className={[
+                  "px-1.5 py-0.5 rounded transition-colors font-mono",
+                  status?.speed === s
+                    ? "bg-f1-red text-white"
+                    : "bg-f1-panel border border-f1-border text-f1-muted hover:text-f1-text",
+                ].join(" ")}
+              >
+                {s}×
+              </button>
+            ))}
+          </div>
+
+          {state?.total_laps && (
+            <input
+              type="range"
+              min={1}
+              max={state.total_laps}
+              value={state.leader_lap}
+              onChange={(e) => client.control("seek", Number(e.target.value))}
+              className="flex-1 min-w-0"
+            />
+          )}
+
+          <span className="font-mono text-f1-muted whitespace-nowrap tabular-nums shrink-0">
+            L{state?.leader_lap ?? "—"}/{state?.total_laps ?? "—"}
+          </span>
+        </>
       )}
-      <span className="font-mono text-zinc-400 whitespace-nowrap">
-        L{state?.leader_lap ?? "—"}/{state?.total_laps ?? "—"}
-      </span>
-      <span
-        className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-          state?.track_status === "green"
-            ? "bg-green-900 text-green-300"
-            : state?.track_status === "red"
-              ? "bg-red-900 text-red-300"
-              : "bg-yellow-900 text-yellow-300"
-        }`}
-      >
-        {state?.track_status ?? "—"}
-      </span>
+
+      {isLive && (
+        <span className="text-f1-muted text-xs ml-1">
+          Live — lap {state?.leader_lap ?? "…"}/{state?.total_laps ?? "…"}
+        </span>
+      )}
     </div>
   );
 }

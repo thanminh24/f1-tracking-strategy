@@ -16,23 +16,23 @@ const ACTIONS = [
 function ResultCard({ r, onPin }: { r: WhatIfResponse; onPin?: () => void }) {
   const gain = -r.delta_expected_position;
   return (
-    <div className="border border-zinc-800 rounded p-2 text-xs space-y-1"
+    <div className="border border-f1-border rounded p-2 text-xs space-y-1 font-mono"
          title={`${r.meta.n_rollouts} rollouts · ${r.meta.compute_ms.toFixed(0)}ms`}>
-      <div className="flex justify-between text-zinc-300">
+      <div className="flex justify-between text-f1-text">
         <span>car {r.car_id} · lap {r.lap} · {r.action}</span>
-        {onPin && <button onClick={onPin} className="text-zinc-500 hover:text-zinc-200">pin</button>}
+        {onPin && <button onClick={onPin} className="text-f1-muted hover:text-f1-text transition-colors">pin</button>}
       </div>
-      <div className={gain > 0 ? "text-emerald-300" : gain < 0 ? "text-red-300" : "text-zinc-400"}>
+      <div className={gain > 0 ? "text-f1-green" : gain < 0 ? "text-f1-red" : "text-f1-muted"}>
         Δ E[position] = {gain > 0 ? "+" : ""}{gain.toFixed(2)} places
       </div>
-      <div className="grid grid-cols-2 gap-2 text-zinc-400">
+      <div className="grid grid-cols-2 gap-2 text-f1-muted">
         <div>
-          <div className="text-zinc-600 uppercase text-[10px]">baseline</div>
+          <div className="text-f1-muted/60 uppercase text-[9px] tracking-wider">baseline</div>
           <div>E[pos] {r.baseline.expected_position.toFixed(1)}</div>
           <div>P(podium) = {pct(r.baseline.podium)}</div>
         </div>
         <div>
-          <div className="text-zinc-600 uppercase text-[10px]">if forced</div>
+          <div className="text-f1-muted/60 uppercase text-[9px] tracking-wider">if forced</div>
           <div>E[pos] {r.forced.expected_position.toFixed(1)}</div>
           <div>P(podium) = {pct(r.forced.podium)}</div>
         </div>
@@ -75,7 +75,7 @@ export function WhatIfPanel({ sessionKey }: { sessionKey: string }) {
     <div className="space-y-2">
       <form onSubmit={submit} className="flex gap-2 items-center text-xs">
         <select value={carId} onChange={(e) => setCarId(e.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-200">
+          className="bg-f1-surface border border-f1-border rounded px-2 py-1 text-f1-text focus:outline-none focus:border-f1-red">
           <option value="">car…</option>
           {cars.map((c) => (
             <option key={c.car_id} value={c.car_id}>
@@ -84,11 +84,11 @@ export function WhatIfPanel({ sessionKey }: { sessionKey: string }) {
           ))}
         </select>
         <select value={action} onChange={(e) => setAction(e.target.value)}
-          className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-200">
+          className="bg-f1-surface border border-f1-border rounded px-2 py-1 text-f1-text focus:outline-none focus:border-f1-red">
           {ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
         </select>
         <button type="submit" disabled={busy || !carId}
-          className="px-3 py-1 rounded bg-zinc-200 text-black font-bold disabled:opacity-40">
+          className="px-3 py-1 rounded bg-f1-red text-white font-bold disabled:opacity-40 hover:bg-red-700 transition-colors">
           {busy ? "rolling out…" : "simulate"}
         </button>
       </form>

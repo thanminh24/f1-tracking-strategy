@@ -1,26 +1,101 @@
 @import "tailwindcss";
 
+/* ── F1 "Pit Wall" Design Tokens ──────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand */
+  --f1-red:            #E10600;
+  --f1-red-dim:        #8B0400;
+
+  /* Surfaces */
+  --f1-surface:        #0a0a0a;   /* page background */
+  --f1-panel:          #141414;   /* panel cards */
+  --f1-panel-hover:    #1c1c1c;
+  --f1-border:         #252525;   /* panel borders */
+  --f1-border-subtle:  #1a1a1a;
+
+  /* Text */
+  --f1-text-primary:   #f0f0f0;
+  --f1-text-secondary: #a0a0a0;
+  --f1-text-muted:     #555555;
+  --f1-text-accent:    var(--f1-red);
+
+  /* Status */
+  --f1-green:          #22c55e;
+  --f1-amber:          #f59e0b;
+  --f1-yellow:         #eab308;
+  --f1-purple:         #bf00ff;   /* fastest lap */
+
+  /* Font stacks (Geist injected by layout.tsx) */
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Courier New", monospace;
 }
 
+/* ── Tailwind theme extension ─────────────────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-f1-red:        var(--f1-red);
+  --color-f1-red-dim:    var(--f1-red-dim);
+  --color-f1-surface:    var(--f1-surface);
+  --color-f1-panel:      var(--f1-panel);
+  --color-f1-panel-hover: var(--f1-panel-hover);
+  --color-f1-border:     var(--f1-border);
+  --color-f1-text:       var(--f1-text-primary);
+  --color-f1-muted:      var(--f1-text-muted);
+  --color-f1-green:      var(--f1-green);
+  --color-f1-amber:      var(--f1-amber);
+  --color-f1-purple:     var(--f1-purple);
+  --font-sans:           var(--font-sans);
+  --font-mono:           var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+html { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--f1-surface);
+  color: var(--f1-text-primary);
+  font-family: var(--font-sans);
+  /* no light-mode override — this is a race-viewing tool, always dark */
 }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--f1-surface); }
+::-webkit-scrollbar-thumb { background: var(--f1-border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* ── Utility overrides ────────────────────────────────────────────────────── */
+input[type="range"] { accent-color: var(--f1-red); }
+
+/* Tabular numbers everywhere for monospace data readability */
+.font-mono { font-feature-settings: "tnum" 1, "zero" 1; }
+
+/* Subtle scanline texture on data-dense panels */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Track status flash — brief color pop when status changes */
+@keyframes status-flash {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+.status-flash { animation: status-flash 0.4s ease-out; }
+
+/* Smooth gap fill transitions for stint bars */
+@keyframes bar-fill {
+  from { opacity: 0; transform: scaleX(0); transform-origin: left; }
+  to   { opacity: 0.88; transform: scaleX(1); }
+}
+.bar-fill { animation: bar-fill 0.3s ease-out; }

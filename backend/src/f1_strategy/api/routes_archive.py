@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from f1_strategy.archive import queries
 from f1_strategy.archive.db import refresh_views
@@ -96,9 +96,12 @@ def race_control(session_key: str) -> list[dict]:
 
 
 @router.get("/sessions/{session_key}/track-outline")
-def track_outline(session_key: str) -> list[dict]:
+def track_outline(session_key: str, response: Response) -> list[dict]:
     try:
-        return get_track_outline(session_key).to_dict(orient="records")
+        data = get_track_outline(session_key).to_dict(orient="records")
+        # Track outline never changes for a given session — cache aggressively.
+        response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+        return data
     except Exception as exc:
         raise HTTPException(404, f"track outline unavailable: {exc}") from exc
 

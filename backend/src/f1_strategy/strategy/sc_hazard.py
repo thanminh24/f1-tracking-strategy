@@ -58,7 +58,14 @@ class SCHazardModel:
 
 
 def _deployment_table(season: int):
-    """Per (session, lap) rows with SC-deploy label (first lap of each SC episode)."""
+    """Per (session, lap) rows with SC-deploy label. wet=1 if session had any rainfall."""
+    # get wet sessions (any rainfall recorded)
+    wet_sessions = query_df(
+        "SELECT DISTINCT session_key FROM weather WHERE rainfall = TRUE AND session_key LIKE ?",
+        [f"{season}_%_R"],
+    )
+    wet_set = set(wet_sessions["session_key"].tolist()) if not wet_sessions.empty else set()
+
     df = query_df(
         "SELECT session_key, lap_number, "
         "max(CASE WHEN track_status LIKE '%4%' THEN 1 ELSE 0 END) sc "
@@ -71,6 +78,7 @@ def _deployment_table(season: int):
     # deploy = SC on this lap but not the previous one (episode start)
     df["prev_sc"] = df.groupby("session_key")["sc"].shift(1, fill_value=0)
     df["deploy"] = ((df["sc"] == 1) & (df["prev_sc"] == 0)).astype(int)
+    df["wet"] = df["session_key"].isin(wet_set).astype(float)
     return df[df["prev_sc"] == 0]  # green-lap exposure set
 
 
@@ -91,7 +99,7 @@ def fit_sc_hazard(season: int) -> SCHazardModel:
         [
             (df["lap_number"] <= 1).astype(float),
             df["lap_number"] / total,
-            np.zeros(len(df)),  # wetness joins when weather features land in the table
+            df["wet"].to_numpy(),  # real wetness from weather join
         ]
     )
     lr = LogisticRegression().fit(X, df["deploy"])

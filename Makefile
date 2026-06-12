@@ -4,7 +4,7 @@
 UV := uv
 BACKEND := cd backend &&
 
-.PHONY: dev dev-backend dev-frontend test lint ingest ingest-backfill build-archive-db clean-scratch
+.PHONY: dev dev-backend dev-frontend test lint ingest ingest-backfill build-archive-db clean-scratch calibrate-all train-models train-ppo
 
 dev: ## run backend :8000 + frontend :3000 concurrently
 	$(MAKE) -j2 dev-backend dev-frontend
@@ -30,6 +30,17 @@ ingest-backfill:
 
 build-archive-db:
 	$(BACKEND) $(UV) run f1-build-archive-db --force
+
+# Fit SimParams for all (season, circuit) pairs in the archive.
+# Run after ingest-backfill completes. Add ARGS="--season 2024" to restrict.
+calibrate-all:
+	$(BACKEND) $(UV) run f1-batch-calibrate $(ARGS)
+
+train-models: ## fit SC hazard + behavior model from archive
+	$(BACKEND) $(UV) run f1-train-models
+
+train-ppo: ## train + eval PPO for one circuit; pass ARGS="--season 2024 --circuit Sakhir --device cuda"
+	$(BACKEND) $(UV) run f1-train-ppo $(ARGS)
 
 # drop viewer-retrieved sessions (data/scratch_parquet); archive is untouched
 clean-scratch:

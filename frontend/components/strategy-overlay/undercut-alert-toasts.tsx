@@ -47,6 +47,7 @@ export function UndercutAlertToasts() {
           `— P(pits within 2 laps) = ${pct(Math.min(pPit2, 1))}`,
       });
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (fresh.length) setAlerts((a) => [...a, ...fresh].slice(-4));
   }, [prediction, cars]);
 
@@ -56,12 +57,12 @@ export function UndercutAlertToasts() {
       {alerts.map((a) => (
         <div
           key={a.id}
-          className="bg-zinc-900 border border-yellow-700/60 text-yellow-100 text-xs
+          className="bg-f1-panel border border-f1-amber/50 text-f1-amber text-xs
                      rounded px-3 py-2 flex items-center gap-3 shadow-lg"
         >
           <span>{a.text}</span>
           <button
-            className="text-zinc-500 hover:text-zinc-200"
+            className="text-f1-muted hover:text-f1-text transition-colors"
             onClick={() => setAlerts((cur) => cur.filter((x) => x.id !== a.id))}
           >
             ✕

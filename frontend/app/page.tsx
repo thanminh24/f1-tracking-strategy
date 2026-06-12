@@ -1,37 +1,38 @@
-// Season grid — archive entry point.
-import Link from "next/link";
-import { LoadRaceForm } from "../components/load-race-form";
+// Main entry point: full race dashboard with session picker + live mode.
+// Server component fetches seasons + most recent race, then hands off to
+// the client HomeDashboard which owns the picker and dashboard state.
+import { HomeDashboard } from "./home-dashboard";
 import { api } from "../lib/api-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   let seasons: number[] = [];
-  let error = "";
+  let defaultKey: string | null = null;
+  let defaultLabel = "";
+
   try {
     seasons = await api.seasons();
+    if (seasons.length > 0) {
+      // Auto-select most recent race from the latest season
+      const latestSeason = seasons[seasons.length - 1];
+      const events = await api.events(latestSeason).catch(() => []);
+      const raceEvents = events.filter((e) => e.session_types.includes("R"));
+      if (raceEvents.length > 0) {
+        const latest = raceEvents[raceEvents.length - 1];
+        defaultKey = `${latestSeason}_${latest.round}_R`;
+        defaultLabel = `${latest.event_name} ${latestSeason}`;
+      }
+    }
   } catch {
-    error = "backend unreachable — start it with `make dev-backend`";
+    // Backend unreachable — HomeDashboard shows empty state
   }
+
   return (
-    <main className="max-w-3xl mx-auto p-8">
-      <h1 className="text-2xl font-bold mb-1">F1 Strategy Viewer</h1>
-      <p className="text-zinc-500 mb-8 text-sm">
-        archive · replay · telemetry · probabilistic strategy
-      </p>
-      <LoadRaceForm />
-      {error && <p className="text-red-400 mt-6">{error}</p>}
-      <div className="grid grid-cols-3 gap-4 mt-6">
-        {seasons.map((year) => (
-          <Link
-            key={year}
-            href={`/season/${year}`}
-            className="border border-zinc-800 rounded-lg p-6 text-center text-xl font-bold hover:border-zinc-500 hover:bg-zinc-900 transition"
-          >
-            {year}
-          </Link>
-        ))}
-      </div>
-    </main>
+    <HomeDashboard
+      seasons={[...seasons].reverse()} // newest season first
+      defaultKey={defaultKey}
+      defaultLabel={defaultLabel}
+    />
   );
 }

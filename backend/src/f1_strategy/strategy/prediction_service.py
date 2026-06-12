@@ -76,7 +76,7 @@ class PredictionService:
         t0 = time.perf_counter()
         params, lap = self.params, state.leader_lap
         total = state.total_laps or params.total_laps
-        wet = False  # wetness joins when per-tick weather lands in RaceState
+        wet = bool(state.weather and state.weather.rainfall)
         sc1 = self.sc_model.prob_next_lap(lap + 1, total, params.sc_hazard_per_lap, wet)
         sc5 = self.sc_model.prob_within(5, lap + 1, total, params.sc_hazard_per_lap, wet)
 

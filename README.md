@@ -28,8 +28,12 @@ make dev          # backend :8000 + frontend :3000
 make test         # backend pytest
 make lint         # ruff
 make ingest ARGS="--year 2024 --round 1"   # ingest one weekend into the archive
-make ingest-backfill                        # full 2024→now archive (long; ~5GB)
+make ingest-backfill                        # ingest 2024→now archive; 2024+2025 full, 2026 partial (mid-season)
 make clean-scratch                          # drop viewer-retrieved sessions
+make calibrate-all             # fit SimParams for all archived circuits (run after backfill)
+make calibrate-all ARGS="--season 2025"  # restrict to one season
+make train-models              # SC hazard (weather-fitted) + behavior model (LightGBM)
+make train-ppo ARGS="--season 2024 --circuit Sakhir --device cuda"  # train PPO for one circuit
 ```
 
 Races opened through the viewer are **retrieve-only**: fetched from FastF1 into a

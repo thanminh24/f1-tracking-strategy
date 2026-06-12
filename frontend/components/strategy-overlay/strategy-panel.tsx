@@ -1,66 +1,88 @@
 "use client";
-// Strategy overlay container: SC gauge + outcome table on by default, driver
-// cards and what-if opt-in. Degrades to a quiet banner when no predictions flow
-// (models disabled or artifacts absent) and flags stale predictions (>2 laps old).
+// Strategy overlay: SC gauge + pit window visualizer + optional details/cards/what-if.
+// Degrades gracefully when no predictions are available.
 import { useState } from "react";
 import { isStale, usePredictionStore } from "../../lib/prediction-store";
 import { useRaceStateStore } from "../../lib/race-state-store";
+import { Panel } from "../layout/panel";
 import { WhatIfPanel } from "../what-if-panel/what-if-panel";
 import { DriverStrategyCards } from "./driver-strategy-cards";
 import { OutcomeProbabilityTable } from "./outcome-probability-table";
+import { PitWindowVisualizer } from "./pit-window-visualizer";
 import { ScProbabilityGauge } from "./sc-probability-gauge";
 import { UndercutAlertToasts } from "./undercut-alert-toasts";
 
 export function StrategyPanel({ sessionKey }: { sessionKey: string }) {
   const prediction = usePredictionStore((s) => s.prediction);
   const currentLap = useRaceStateStore((s) => s.state?.leader_lap ?? 0);
+  const [showTable, setShowTable] = useState(false);
   const [showCards, setShowCards] = useState(false);
   const [showWhatIf, setShowWhatIf] = useState(false);
 
   if (!prediction) {
     return (
-      <div className="border border-zinc-800 rounded-lg p-3 text-xs text-zinc-600">
-        strategy predictions unavailable — viewer-only mode (models not trained for
-        this session, or predictions disabled)
-      </div>
+      <Panel className="opacity-50">
+        <p className="text-xs text-f1-muted text-center py-2">
+          strategy predictions unavailable — viewer-only mode
+        </p>
+      </Panel>
     );
   }
 
+  const stale = isStale(prediction, currentLap);
+  const staleLabel = stale ? `stale (${currentLap - prediction.lap}L old)` : null;
+
+  const tabBtn = (label: string, active: boolean, onClick: () => void) => (
+    <button
+      onClick={onClick}
+      className={[
+        "px-2 py-0.5 rounded border text-[10px] transition-colors",
+        active
+          ? "border-f1-text/40 text-f1-text"
+          : "border-f1-border text-f1-muted hover:text-f1-text",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="border border-zinc-800 rounded-lg p-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs uppercase text-zinc-500">
-          strategy · lap {prediction.lap}
-          {isStale(prediction, currentLap) && (
-            <span className="ml-2 text-amber-400 normal-case">
-              stale ({currentLap - prediction.lap} laps old)
-            </span>
-          )}
+    <div className="space-y-2">
+      <Panel
+        title="Strategy"
+        action={
+          <div className="flex items-center gap-1.5">
+            {staleLabel && (
+              <span className="text-[9px] text-f1-amber font-mono">{staleLabel}</span>
+            )}
+            <span className="text-[9px] text-f1-muted font-mono">L{prediction.lap}</span>
+            {tabBtn("table", showTable, () => setShowTable(!showTable))}
+            {tabBtn("cards", showCards, () => setShowCards(!showCards))}
+            {tabBtn("what-if", showWhatIf, () => setShowWhatIf(!showWhatIf))}
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <ScProbabilityGauge />
+
+          {/* Primary view: pit window visualizer with action recommendations */}
+          <PitWindowVisualizer />
+
+          {/* Optional: flat probability table (toggled) */}
+          {showTable && <OutcomeProbabilityTable />}
+
+          {showCards && <DriverStrategyCards />}
+          {showWhatIf && <WhatIfPanel sessionKey={sessionKey} />}
+
+          <p className="text-[9px] text-f1-muted font-mono">
+            {prediction.meta.n_rollouts} rollouts ·{" "}
+            {Object.entries(prediction.meta.model_versions)
+              .map(([k, v]) => `${k}:${v}`)
+              .join(" · ")}
+          </p>
         </div>
-        <div className="flex gap-2 text-[10px]">
-          <button onClick={() => setShowCards(!showCards)}
-            className={`px-2 py-0.5 rounded border ${
-              showCards ? "border-zinc-400 text-zinc-200" : "border-zinc-800 text-zinc-500"}`}>
-            cards
-          </button>
-          <button onClick={() => setShowWhatIf(!showWhatIf)}
-            className={`px-2 py-0.5 rounded border ${
-              showWhatIf ? "border-zinc-400 text-zinc-200" : "border-zinc-800 text-zinc-500"}`}>
-            what-if
-          </button>
-        </div>
-      </div>
-      <ScProbabilityGauge />
-      <OutcomeProbabilityTable />
-      {showCards && <DriverStrategyCards />}
-      {showWhatIf && <WhatIfPanel sessionKey={sessionKey} />}
+      </Panel>
       <UndercutAlertToasts />
-      <div className="text-[10px] text-zinc-700">
-        {prediction.meta.n_rollouts} rollouts ·{" "}
-        {Object.entries(prediction.meta.model_versions)
-          .map(([k, v]) => `${k}:${v}`)
-          .join(" · ")}
-      </div>
     </div>
   );
 }

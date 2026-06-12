@@ -46,9 +46,13 @@ def test_deg_dataset_filters_dirty_laps():
     assert not df.empty
     assert (df["lap_time_ms"] > 80000).all()  # no pit-affected short/zero laps
     assert {"compound", "tire_age", "in_traffic", "season"} <= set(df.columns)
-    # in-lap/out-lap exclusion: clean laps strictly fewer than all timed laps
-    all_laps = queries.get_laps(BAHRAIN_24)
-    assert len(df) < all_laps["lap_time_ms"].notna().sum()
+    # clean laps < all timed laps for the same circuit across all seasons
+    from f1_strategy.archive.db import query_df
+    all_sakhir = query_df(
+        "SELECT lap_time_ms FROM laps l JOIN sessions s USING (session_key) "
+        "WHERE s.circuit = 'Sakhir' AND s.session_type = 'R'"
+    )
+    assert len(df) < all_sakhir["lap_time_ms"].notna().sum()
 
 
 def test_pit_loss_estimate_sane():

@@ -6,8 +6,11 @@ actions: 0=stay, 1=pit SOFT, 2=pit MEDIUM, 3=pit HARD
 reward: per-lap -Δposition shaping + terminal bonus by finish position.
 """
 
+import os
+
 import gymnasium as gym
 import numpy as np
+import pandas as pd
 from gymnasium import spaces
 
 from f1_strategy.sim.params import SimParams
@@ -15,6 +18,75 @@ from f1_strategy.sim.race_sim import COMPOUND_IDX, GRID_SLOT_MS, TRAFFIC_GAP_MS,
 from f1_strategy.sim.strategies import FixedStrategy, one_stop, two_stop
 
 ACTIONS = ["STAY", "SOFT", "MEDIUM", "HARD"]
+
+
+def _sample_rival_strategy(
+    params: SimParams, position: int, rng: np.random.Generator
+) -> FixedStrategy:
+    """Sample a rival pit schedule from the behavior model (F1_OPPONENT_MODEL=1 path).
+
+    If behavior model is not usable, falls back to random one-stop/two-stop heuristic.
+    """
+    from f1_strategy.strategy.behavior_model import BehaviorModel, COMPOUND_CLASSES, PIT_FEATURES
+
+    bm = BehaviorModel()
+    if not bm.usable:
+        # Fallback: random one-stop or two-stop
+        r = rng.random()
+        return one_stop(params.total_laps) if r < 0.5 else two_stop(params.total_laps)
+
+    L = params.total_laps
+    # Build feature rows for each lap to compute P(pit on that lap)
+    rows = []
+    tire_age = 0
+    stint = 1
+    compound = "SOFT"  # typical start compound
+    for lap in range(1, L + 1):
+        race_frac = lap / max(L, 1)
+        rows.append({
+            "tire_age": tire_age,
+            "age_vs_typical": tire_age - 20.0,
+            "race_frac": race_frac,
+            "laps_left": L - lap,
+            "position": position,
+            "stint": stint,
+            "comp_soft": float(compound == "SOFT"),
+            "comp_medium": float(compound == "MEDIUM"),
+            "comp_hard": float(compound == "HARD"),
+        })
+        tire_age += 1
+
+    feat = pd.DataFrame(rows)
+    pit_p = bm.pit_probs(feat)
+    pit_p = np.clip(pit_p, 0, 1)
+
+    # Normalize to distribution over pit laps; sample one pit lap
+    total_p = pit_p.sum()
+    if total_p < 1e-6:
+        # No pit probability; fall back to random
+        r = rng.random()
+        return one_stop(L) if r < 0.5 else two_stop(L)
+
+    norm_p = pit_p / total_p
+    pit_lap = int(rng.choice(L, p=norm_p)) + 1  # 1-indexed
+
+    # Sample compound at pit lap from the compound model
+    lap_feat = feat.iloc[[pit_lap - 1]]
+    comp_p = bm.compound_probs(lap_feat)[0]  # shape (3,) over SOFT/MEDIUM/HARD
+    comp_p = np.clip(comp_p, 0, 1)
+    comp_sum = comp_p.sum()
+
+    if comp_sum < 1e-6:
+        # No preference; default to HARD
+        comp_idx = 2
+    else:
+        comp_idx = int(rng.choice(3, p=comp_p / comp_sum))
+
+    chosen_compound = COMPOUND_CLASSES[comp_idx]
+    return FixedStrategy(
+        start_compound="SOFT",
+        stops=[(pit_lap, chosen_compound)]
+    )
 
 
 class RaceStrategyEnv(gym.Env):
@@ -40,9 +112,13 @@ class RaceStrategyEnv(gym.Env):
         self.focal = "0"
         grid = {c: i + 1 for i, c in enumerate(self.rng.permutation(car_ids).tolist())}
         rival_strats: dict[str, FixedStrategy] = {}
+        use_behavior = os.environ.get("F1_OPPONENT_MODEL") == "1"
         for c in car_ids:
-            r = self.rng.random()
-            rival_strats[c] = one_stop(L) if r < 0.5 else two_stop(L)
+            if use_behavior:
+                rival_strats[c] = _sample_rival_strategy(self.params, grid[c], self.rng)
+            else:
+                r = self.rng.random()
+                rival_strats[c] = one_stop(L) if r < 0.5 else two_stop(L)
         self._sim = RaceSim(
             self.params, car_ids, grid, rival_strats,
             n_rollouts=1, seed=int(self.rng.integers(2**31)),

@@ -26,12 +26,12 @@ def _ckpt_path(season: int, circuit: str):
     return get_settings().models_dir / f"ppo_{season}_{circuit}.zip"
 
 
-def train(season: int, circuit: str, timesteps: int = 100_000, seed: int = 0):
+def train(season: int, circuit: str, timesteps: int = 100_000, seed: int = 0, device: str = "auto"):
     from stable_baselines3 import PPO  # deferred heavy import
 
     params = SimParams.load(season, circuit)
     env = RaceStrategyEnv(params, seed=seed)
-    model = PPO("MlpPolicy", env, seed=seed, verbose=0, n_steps=1024, batch_size=256)
+    model = PPO("MlpPolicy", env, seed=seed, verbose=0, n_steps=1024, batch_size=256, device=device)
     model.learn(total_timesteps=timesteps, progress_bar=False)
     path = _ckpt_path(season, circuit)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,8 +101,9 @@ def main() -> None:
     parser.add_argument("--circuit", required=True)
     parser.add_argument("--timesteps", type=int, default=100_000)
     parser.add_argument("--eval-sims", type=int, default=100)
+    parser.add_argument("--device", default="auto", help="torch device: auto|cuda|cpu")
     args = parser.parse_args()
-    train(args.season, args.circuit, args.timesteps)
+    train(args.season, args.circuit, args.timesteps, device=args.device)
     metrics = evaluate(args.season, args.circuit, args.eval_sims)
     print(json.dumps(metrics, indent=1))
 

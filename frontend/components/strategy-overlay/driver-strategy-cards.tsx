@@ -8,10 +8,10 @@ import { pct } from "../../lib/prediction-types";
 import { useRaceStateStore } from "../../lib/race-state-store";
 
 const CHIP_COLOR: Record<string, string> = {
-  STAY: "bg-zinc-800 text-zinc-300",
-  PIT_SOFT: "bg-red-900/60 text-red-200",
-  PIT_MEDIUM: "bg-yellow-900/60 text-yellow-200",
-  PIT_HARD: "bg-zinc-200/20 text-zinc-100",
+  STAY:       "bg-f1-panel border border-f1-border text-f1-muted",
+  PIT_SOFT:   "bg-red-900/50 border border-red-700/40 text-red-300",
+  PIT_MEDIUM: "bg-yellow-900/50 border border-yellow-700/40 text-yellow-300",
+  PIT_HARD:   "bg-white/10 border border-white/20 text-f1-text",
 };
 
 function likelyWindow(probs: Record<string, number>): string | null {
@@ -35,27 +35,27 @@ function Card({ car, code }: { car: CarPrediction; code: string }) {
   return (
     <button
       onClick={() => setOpen(!open)}
-      className="text-left border border-zinc-800 rounded p-2 hover:border-zinc-600"
+      className="text-left border border-f1-border rounded p-2 hover:border-f1-red/40 hover:bg-f1-panel-hover transition-colors"
       title={action ? `action probs: ${Object.entries(car.action_probs)
         .map(([a, p]) => `${a} ${pct(p)}`).join(" · ")}` : "no policy recommendation"}
     >
       <div className="flex items-center gap-2">
-        <span className="text-xs font-bold text-zinc-200">{code}</span>
+        <span className="text-xs font-bold text-f1-text font-mono">{code}</span>
         {action && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${CHIP_COLOR[action] ?? ""}`}>
             {action.replace("_", " ")} {pct(car.action_probs[action] ?? 0)}
           </span>
         )}
       </div>
-      {window_ && <div className="text-[10px] text-zinc-500 mt-1">{window_}</div>}
+      {window_ && <div className="text-[10px] text-f1-muted mt-1 font-mono">{window_}</div>}
       {open && (
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-1 space-y-0.5 border-t border-f1-border/30 pt-1">
           {Object.entries(car.next_compound_probs).map(([c, p]) => (
-            <div key={c} className="text-[10px] text-zinc-400">
+            <div key={c} className="text-[10px] text-f1-muted font-mono">
               P(next = {c}) = {pct(p)}
             </div>
           ))}
-          <div className="text-[10px] text-zinc-400">
+          <div className="text-[10px] text-f1-muted font-mono">
             P(win) = {pct(car.outcome.win)} · P(podium) = {pct(car.outcome.podium)}
           </div>
         </div>

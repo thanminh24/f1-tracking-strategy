@@ -22,10 +22,10 @@ export function ScProbabilityGauge() {
         prediction.meta.model_versions["sc_hazard"] ?? "sc model"}`}
     >
       <div>
-        <div className="text-xs uppercase text-zinc-500">safety car</div>
-        <div className="text-sm text-zinc-200">
+        <div className="text-[9px] uppercase text-f1-muted tracking-widest font-mono">Safety Car</div>
+        <div className="text-xs text-f1-text font-mono">
           P(next lap) = {pct(prediction.sc_prob_1lap)}
-          <span className="text-zinc-500"> · P(5 laps) = {pct(prediction.sc_prob_5laps)}</span>
+          <span className="text-f1-muted"> · P(5 laps) = {pct(prediction.sc_prob_5laps)}</span>
         </div>
       </div>
       {history.length > 1 && (

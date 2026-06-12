@@ -26,7 +26,7 @@ export function OutcomeProbabilityTable() {
   if (!prediction) return null;
   const header = (key: SortKey, label: string) => (
     <th
-      className={`px-2 cursor-pointer text-right ${sortKey === key ? "text-zinc-200" : ""}`}
+      className={`px-2 cursor-pointer text-right transition-colors ${sortKey === key ? "text-f1-text" : "text-f1-muted hover:text-f1-text"}`}
       onClick={() => setSortKey(key)}
     >
       {label}
@@ -35,9 +35,9 @@ export function OutcomeProbabilityTable() {
 
   return (
     <div title={`${prediction.meta.n_rollouts} rollouts · lap ${prediction.lap}`}>
-      <table className="w-full text-xs text-zinc-400">
+      <table className="w-full text-xs text-f1-muted font-mono">
         <thead>
-          <tr className="text-zinc-600 uppercase">
+          <tr className="text-[9px] text-f1-muted uppercase tracking-wider border-b border-f1-border">
             <th className="text-left px-2">car</th>
             {header("win", "P(win)")}
             {header("podium", "P(podium)")}
@@ -47,8 +47,8 @@ export function OutcomeProbabilityTable() {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.car_id} className="border-t border-zinc-900">
-              <td className="px-2 py-0.5 text-zinc-200">{r.code}</td>
+            <tr key={r.car_id} className="border-t border-f1-border/30 hover:bg-f1-panel-hover transition-colors">
+              <td className="px-2 py-0.5 text-f1-text">{r.code}</td>
               <td className="px-2 text-right">{pct(r.outcome.win)}</td>
               <td className="px-2 text-right">{pct(r.outcome.podium)}</td>
               <td className="px-2 text-right">{pct(r.outcome.points)}</td>

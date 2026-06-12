@@ -1,7 +1,6 @@
 "use client";
-// Gap-to-leader vs lap, computed once from archived laps (seek-safe),
-// with a moving "now" marker from the live tick and probability-shaded
-// pit-window bands (field-aggregate P(any pit) per lap) from predictions.
+// Gap-to-leader vs lap. Team-colored polylines, pit-window probability bands,
+// grid lines, axis labels, and a moving "now" marker.
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api-client";
 import { usePredictionStore } from "../lib/prediction-store";
@@ -21,7 +20,6 @@ function buildSeries(laps: LapRow[]): { series: Series[]; maxLap: number; maxGap
     if (!byCar.has(lap.car_id)) byCar.set(lap.car_id, []);
     byCar.get(lap.car_id)!.push(lap);
   }
-  // cumulative race time per car per lap
   const cum = new Map<string, Map<number, number>>();
   for (const [carId, rows] of byCar) {
     let total = 0;
@@ -46,7 +44,7 @@ function buildSeries(laps: LapRow[]): { series: Series[]; maxLap: number; maxGap
       const lt = leaderAt.get(lap);
       if (t != null && lt != null) {
         const gap = (t - lt) / 1000;
-        if (gap < 120) maxGap = Math.max(maxGap, gap); // clip lapped-car blowouts
+        if (gap < 120) maxGap = Math.max(maxGap, gap);
         points.push({ lap, gap });
       }
     }
@@ -55,46 +53,75 @@ function buildSeries(laps: LapRow[]): { series: Series[]; maxLap: number; maxGap
   return { series, maxLap, maxGap: Math.min(Math.max(maxGap, 10), 120) };
 }
 
-const W = 600, H = 260, PAD = 30;
+const W = 600, H = 220, PAD_L = 34, PAD_R = 10, PAD_T = 10, PAD_B = 20;
 
 export function GapChart({ sessionKey }: { sessionKey: string }) {
   const [laps, setLaps] = useState<LapRow[]>([]);
   const currentLap = useRaceStateStore((s) => s.state?.leader_lap ?? 0);
   const prediction = usePredictionStore((s) => s.prediction);
+
   useEffect(() => {
     api.laps(sessionKey).then(setLaps).catch(() => setLaps([]));
   }, [sessionKey]);
 
   const chart = useMemo(() => (laps.length ? buildSeries(laps) : null), [laps]);
 
-  // field-aggregate pit probability per future lap → band opacity (probabilistic copy)
   const pitBands = useMemo(() => {
     if (!prediction) return new Map<number, number>();
     const agg = new Map<number, number>();
     for (const car of prediction.cars) {
       for (const [lapStr, p] of Object.entries(car.pit_window_probs)) {
         const lap = Number(lapStr);
-        agg.set(lap, 1 - (1 - (agg.get(lap) ?? 0)) * (1 - p)); // P(any car pits)
+        agg.set(lap, 1 - (1 - (agg.get(lap) ?? 0)) * (1 - p));
       }
     }
     return agg;
   }, [prediction]);
 
-  if (!chart) return <div className="text-zinc-600 text-sm p-4">gap chart loading…</div>;
+  if (!chart) {
+    return <div className="text-f1-muted text-xs p-4 text-center">gap chart loading…</div>;
+  }
 
-  const x = (lap: number) => PAD + ((lap - 1) / Math.max(chart.maxLap - 1, 1)) * (W - 2 * PAD);
-  const y = (gap: number) => PAD + (Math.min(gap, chart.maxGap) / chart.maxGap) * (H - 2 * PAD);
-  const bandW = (W - 2 * PAD) / Math.max(chart.maxLap - 1, 1);
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+  const x = (lap: number) => PAD_L + ((lap - 1) / Math.max(chart.maxLap - 1, 1)) * plotW;
+  const y = (gap: number) => PAD_T + (Math.min(gap, chart.maxGap) / chart.maxGap) * plotH;
+  const bandW = plotW / Math.max(chart.maxLap - 1, 1);
+
+  // Y-axis ticks
+  const yTicks: number[] = [];
+  const tickStep = chart.maxGap > 60 ? 20 : chart.maxGap > 20 ? 10 : 5;
+  for (let v = 0; v <= chart.maxGap; v += tickStep) yTicks.push(v);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-      <text x={PAD} y={14} fontSize={10} fill="#71717a">gap to leader (s) — down = further back</text>
+      {/* Y grid lines + labels */}
+      {yTicks.map((v) => (
+        <g key={v}>
+          <line
+            x1={PAD_L} x2={W - PAD_R}
+            y1={y(v)} y2={y(v)}
+            stroke="#1c1c1c" strokeWidth={1}
+          />
+          <text x={PAD_L - 4} y={y(v) + 3} fontSize={8} fill="#444"
+            textAnchor="end" fontFamily="var(--font-mono)">
+            {v}s
+          </text>
+        </g>
+      ))}
+
+      {/* Pit probability bands */}
       {[...pitBands.entries()].map(([lap, p]) => (
-        <rect key={lap} x={x(lap) - bandW / 2} y={PAD} width={bandW} height={H - 2 * PAD}
-          fill="#38bdf8" opacity={Math.min(p, 1) * 0.25}>
+        <rect key={lap}
+          x={x(lap) - bandW / 2} y={PAD_T}
+          width={bandW} height={plotH}
+          fill="#38bdf8" opacity={Math.min(p, 1) * 0.18}
+        >
           <title>{`P(any pit on lap ${lap}) = ${Math.round(p * 100)}%`}</title>
         </rect>
       ))}
+
+      {/* Series lines */}
       {chart.series.map((s) => (
         <polyline
           key={s.carId}
@@ -102,14 +129,27 @@ export function GapChart({ sessionKey }: { sessionKey: string }) {
           stroke={teamColor(s.team)}
           strokeWidth={1.2}
           opacity={0.85}
-          points={s.points.map((p) => `${x(p.lap)},${y(p.gap)}`).join(" ")}
+          strokeLinejoin="round"
+          points={s.points.map((p) => `${x(p.lap).toFixed(1)},${y(p.gap).toFixed(1)}`).join(" ")}
         />
       ))}
+
+      {/* Current lap marker */}
       {currentLap > 0 && (
-        <line x1={x(currentLap)} x2={x(currentLap)} y1={PAD} y2={H - PAD}
-          stroke="#fafafa" strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />
+        <line
+          x1={x(currentLap)} x2={x(currentLap)}
+          y1={PAD_T} y2={PAD_T + plotH}
+          stroke="rgba(255,255,255,0.4)" strokeWidth={1} strokeDasharray="3 3"
+        />
       )}
-      <text x={W - PAD} y={H - 6} fontSize={10} fill="#71717a" textAnchor="end">
+
+      {/* Axis bottom */}
+      <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + plotH} y2={PAD_T + plotH}
+        stroke="#252525" strokeWidth={1} />
+
+      {/* Lap label */}
+      <text x={W - PAD_R} y={H - 4} fontSize={8} fill="#444"
+        textAnchor="end" fontFamily="var(--font-mono)">
         lap {currentLap || "—"} / {chart.maxLap}
       </text>
     </svg>

@@ -1,99 +1,177 @@
 "use client";
-// SVG track outline + car dots positioned by lap_fraction along the path.
-// Dot motion smoothed with a CSS transition between 1Hz ticks.
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api-client";
+// Canvas2D track map at 60fps. Two stacked canvases:
+//   staticCanvas — track outline, redrawn only when geo or track_status changes
+//   dynamicCanvas — car dots, redrawn every rAF with lerp between 1Hz ticks
+import { useEffect, useRef } from "react";
+import { COLORS, TRACK_STATUS_COLORS } from "../lib/design-tokens";
+import { useCanvasLoop } from "../lib/use-canvas-loop";
+import { useTrackGeo } from "../lib/use-track-geo";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
-import type { OutlinePoint } from "../lib/types";
+import type { CarState } from "../lib/types";
 
-const TRACK_STATUS_COLORS: Record<string, string> = {
-  green: "#3f3f46",
-  yellow_zone: "#eab308",
-  vsc: "#eab308",
-  sc: "#f59e0b",
-  red: "#ef4444",
-};
+const VIEWBOX = 1000;
+const DOT_R = 10;
+const TRACK_WIDTH = 14;
 
-function useOutline(sessionKey: string) {
-  const [points, setPoints] = useState<OutlinePoint[]>([]);
-  useEffect(() => {
-    api.trackOutline(sessionKey).then(setPoints).catch(() => setPoints([]));
-  }, [sessionKey]);
-  return points;
-}
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * clamp(t, 0, 1);
 
 export function TrackMap({ sessionKey }: { sessionKey: string }) {
-  const points = useOutline(sessionKey);
+  const geo = useTrackGeo(sessionKey);
   const state = useRaceStateStore((s) => s.state);
 
-  // Normalize outline into a 0-1000 viewBox + cumulative arc lengths for projection.
-  const geo = useMemo(() => {
-    if (points.length < 10) return null;
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const [minX, maxX] = [Math.min(...xs), Math.max(...xs)];
-    const [minY, maxY] = [Math.min(...ys), Math.max(...ys)];
-    const scale = 940 / Math.max(maxX - minX, maxY - minY);
-    const norm = points.map((p) => ({
-      x: (p.x - minX) * scale + 30,
-      y: (maxY - p.y) * scale + 30, // flip y: telemetry coords are y-up
-    }));
-    const cum: number[] = [0];
-    for (let i = 1; i < norm.length; i++) {
-      cum.push(cum[i - 1] + Math.hypot(norm[i].x - norm[i - 1].x, norm[i].y - norm[i - 1].y));
+  // ── Static canvas: track outline ────────────────────────────────────────
+  const staticRef = useRef<HTMLCanvasElement | null>(null);
+  const geoRef = useRef(geo);
+
+  useEffect(() => {
+    geoRef.current = geo;
+    const canvas = staticRef.current;
+    if (!canvas || !geo) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = canvas.offsetWidth * ratio;
+    canvas.height = canvas.offsetHeight * ratio;
+    ctx.scale(ratio, ratio);
+
+    const scaleX = canvas.offsetWidth / VIEWBOX;
+    const scaleY = canvas.offsetHeight / VIEWBOX;
+
+    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+    ctx.beginPath();
+    for (let i = 0; i < geo.norm.length; i++) {
+      const x = geo.norm[i].x * scaleX;
+      const y = geo.norm[i].y * scaleY;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
-    const total = cum[cum.length - 1];
-    const at = (frac: number) => {
-      const target = ((frac % 1) + 1) % 1 * total;
-      let lo = 0, hi = cum.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (cum[mid] < target) lo = mid + 1;
-        else hi = mid;
-      }
-      return norm[lo];
-    };
-    const d = `M ${norm.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")} Z`;
-    return { d, at };
-  }, [points]);
+    ctx.closePath();
+    const trackColor = TRACK_STATUS_COLORS[state?.track_status ?? "green"];
+    ctx.strokeStyle = trackColor;
+    ctx.lineWidth = TRACK_WIDTH;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }, [geo, state?.track_status]);
+
+  // ── Dynamic canvas: interpolated car dots ───────────────────────────────
+  // Refs hold previous/current tick data for interpolation
+  const prevCarsRef = useRef<CarState[]>([]);
+  const currCarsRef = useRef<CarState[]>([]);
+  const tickTimeRef = useRef(0); // initialized to 0; set to performance.now() on first tick
+
+  useEffect(() => {
+    if (!state) return;
+    prevCarsRef.current = currCarsRef.current;
+    currCarsRef.current = state.cars;
+    tickTimeRef.current = performance.now();
+  }, [state]);
+
+  const dynRef = useCanvasLoop((ctx) => {
+    const canvas = ctx.canvas;
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+
+    const ratio = window.devicePixelRatio || 1;
+    if (canvas.width !== w * ratio || canvas.height !== h * ratio) {
+      canvas.width = w * ratio;
+      canvas.height = h * ratio;
+      ctx.scale(ratio, ratio);
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    const g = geoRef.current;
+    if (!g) return;
+
+    const scaleX = w / VIEWBOX;
+    const scaleY = h / VIEWBOX;
+
+    // Fraction of time elapsed since last 1Hz tick (0-1 → smooth interpolation)
+    const elapsed = performance.now() - tickTimeRef.current;
+    const t = Math.min(elapsed / 1000, 1);
+
+    const prev = new Map(prevCarsRef.current.map((c) => [c.car_id, c]));
+    const curr = currCarsRef.current;
+
+    for (const car of curr) {
+      if (car.status === "out" || car.status === "finished") continue;
+      const p = prev.get(car.car_id);
+
+      const fromFrac = p?.lap_fraction ?? car.lap_fraction;
+      // Avoid snapping backward on new lap: if fraction resets (<0.1 diff going backward), skip lerp
+      const fracDiff = car.lap_fraction - fromFrac;
+      const adjustedFrom = fracDiff < -0.5 ? car.lap_fraction : fromFrac;
+      const frac = lerp(adjustedFrom, car.lap_fraction, t);
+
+      const pt = g.at(frac);
+      const x = pt.x * scaleX;
+      const y = pt.y * scaleY;
+      const r = DOT_R * Math.min(scaleX, scaleY);
+
+      const color = teamColor(car.team);
+
+      // Outer ring for contrast
+      ctx.beginPath();
+      ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.surface;
+      ctx.fill();
+
+      // Team-colored dot
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Position number inside dot
+      const posSize = Math.round(9 * scaleX);
+      ctx.font = `bold ${posSize}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = COLORS.surface;
+      ctx.fillText(String(car.position), x, y + 0.5);
+
+      // Driver code label above the dot
+      const code = (car.driver_code ?? car.car_id).slice(0, 3).toUpperCase();
+      const labelSize = Math.max(8, Math.round(r * 1.1));
+      ctx.font = `bold ${labelSize}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      // Background pill for readability
+      const tw = ctx.measureText(code).width;
+      const pillW = tw + 4;
+      const pillH = labelSize + 2;
+      const pillX = x - pillW / 2;
+      const pillY = y - r - 3 - pillH;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(pillX, pillY, pillW, pillH);
+      ctx.fillStyle = color;
+      ctx.fillText(code, x, y - r - 3);
+    }
+  });
 
   if (!geo) {
     return (
-      <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
+      <div className="flex items-center justify-center h-full text-f1-muted text-sm">
         track map loading…
       </div>
     );
   }
 
   return (
-    <svg viewBox="0 0 1000 1000" className="w-full h-full">
-      <path
-        d={geo.d}
-        fill="none"
-        stroke={TRACK_STATUS_COLORS[state?.track_status ?? "green"]}
-        strokeWidth={14}
-        strokeLinejoin="round"
+    <div className="relative w-full h-full">
+      {/* Static layer: track outline */}
+      <canvas
+        ref={staticRef}
+        className="absolute inset-0 w-full h-full"
+        style={{ imageRendering: "pixelated" }}
       />
-      {state?.cars
-        .filter((c) => c.status !== "out" && c.status !== "finished")
-        .map((car) => {
-          const pos = geo.at(car.lap_fraction);
-          return (
-            <g
-              key={car.car_id}
-              style={{
-                transform: `translate(${pos.x}px, ${pos.y}px)`,
-                transition: "transform 1s linear",
-              }}
-            >
-              <circle r={11} fill={teamColor(car.team)} stroke="#000" strokeWidth={1.5} />
-              <text y={4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#000">
-                {car.position}
-              </text>
-            </g>
-          );
-        })}
-    </svg>
+      {/* Dynamic layer: car dots at 60fps */}
+      <canvas
+        ref={dynRef as React.RefObject<HTMLCanvasElement>}
+        className="absolute inset-0 w-full h-full"
+      />
+    </div>
   );
 }
