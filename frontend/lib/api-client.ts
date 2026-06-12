@@ -8,10 +8,17 @@ import type {
   TelemetrySample,
 } from "./types";
 
+// Empty string → same-origin (nginx routes /api/* and /ws/* to backend).
+// Set NEXT_PUBLIC_API_URL only when running backend on a different host/port.
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export const WS_BASE = API_BASE.replace(/^http/, "ws");
+// Browser: derive ws(s):// from current page origin so nginx WebSocket proxy works.
+// Server-side (Next.js RSC): fall back to loopback for prefetch calls.
+export const WS_BASE =
+  typeof window !== "undefined"
+    ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
+    : (API_BASE || "http://localhost:8000").replace(/^http/, "ws");
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });

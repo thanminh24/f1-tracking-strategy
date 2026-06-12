@@ -1,5 +1,7 @@
 """FastAPI application entrypoint. Routers are registered as phases land."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,10 +21,15 @@ app.include_router(source_router)   # /api/sessions/{key}/source
 app.include_router(live_router)     # /api/live/current-session
 app.include_router(whatif_router)
 
-# Local-first: frontend dev server is the only expected origin.
+# CORS_ORIGINS env var: comma-separated list of allowed origins.
+# Default allows local dev + Docker Compose internal traffic.
+_cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://frontend:3000")
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"http://localhost:\d+",  # any localhost port in dev
     allow_methods=["*"],
     allow_headers=["*"],
 )

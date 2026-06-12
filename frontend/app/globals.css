@@ -1,101 +1,121 @@
 @import "tailwindcss";
 
-/* ── F1 "Pit Wall" Design Tokens ──────────────────────────────────────────── */
+/* ── F1 Pit Wall Design System ─────────────────────────────────────────────── */
 :root {
   /* Brand */
-  --f1-red:            #E10600;
-  --f1-red-dim:        #8B0400;
+  --f1-red: #E10600;
+  --f1-red-dim: #8A0400;
 
-  /* Surfaces */
-  --f1-surface:        #0a0a0a;   /* page background */
-  --f1-panel:          #141414;   /* panel cards */
-  --f1-panel-hover:    #1c1c1c;
-  --f1-border:         #252525;   /* panel borders */
-  --f1-border-subtle:  #1a1a1a;
+  /* Backgrounds — layered from darkest to lightest */
+  --f1-bg:           #080808;
+  --f1-surface:      #0F0F0F;
+  --f1-panel:        #181818;
+  --f1-panel-hover:  #222222;
 
-  /* Text */
-  --f1-text-primary:   #f0f0f0;
-  --f1-text-secondary: #a0a0a0;
-  --f1-text-muted:     #555555;
-  --f1-text-accent:    var(--f1-red);
+  /* Borders */
+  --f1-border:       #2D2D2D;
+  --f1-border-light: #3A3A3A;
+
+  /* Text — WCAG AA minimum on dark bg */
+  --f1-text:         #EFEFEF;
+  --f1-text-dim:     #B0B0B0;
+  --f1-muted:        #707070;
 
   /* Status */
-  --f1-green:          #22c55e;
-  --f1-amber:          #f59e0b;
-  --f1-yellow:         #eab308;
-  --f1-purple:         #bf00ff;   /* fastest lap */
+  --f1-green:  #22C55E;
+  --f1-amber:  #F59E0B;
+  --f1-blue:   #3B82F6;
 
-  /* Font stacks (Geist injected by layout.tsx) */
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), "Courier New", monospace;
+  /* Track status colors used by canvas */
+  --track-green:  #2D2D2D;
+  --track-yellow: #78350F;
+  --track-sc:     #78350F;
+  --track-vsc:    #713F12;
+  --track-red:    #450A0A;
 }
 
-/* ── Tailwind theme extension ─────────────────────────────────────────────── */
-@theme inline {
-  --color-f1-red:        var(--f1-red);
-  --color-f1-red-dim:    var(--f1-red-dim);
-  --color-f1-surface:    var(--f1-surface);
-  --color-f1-panel:      var(--f1-panel);
-  --color-f1-panel-hover: var(--f1-panel-hover);
-  --color-f1-border:     var(--f1-border);
-  --color-f1-text:       var(--f1-text-primary);
-  --color-f1-muted:      var(--f1-text-muted);
-  --color-f1-green:      var(--f1-green);
-  --color-f1-amber:      var(--f1-amber);
-  --color-f1-purple:     var(--f1-purple);
-  --font-sans:           var(--font-sans);
-  --font-mono:           var(--font-mono);
+/* Base */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #__next {
+  height: 100%;
+  background: var(--f1-bg);
+  color: var(--f1-text);
+  /* System stack — no external font dependencies */
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ── Base ─────────────────────────────────────────────────────────────────── */
-html { height: 100%; }
+/* Tailwind utility aliases */
+@layer utilities {
+  .bg-f1-bg           { background-color: var(--f1-bg); }
+  .bg-f1-surface      { background-color: var(--f1-surface); }
+  .bg-f1-panel        { background-color: var(--f1-panel); }
+  .bg-f1-panel-hover  { background-color: var(--f1-panel-hover); }
 
-body {
-  background: var(--f1-surface);
-  color: var(--f1-text-primary);
-  font-family: var(--font-sans);
-  /* no light-mode override — this is a race-viewing tool, always dark */
+  .text-f1-text       { color: var(--f1-text); }
+  .text-f1-text-dim   { color: var(--f1-text-dim); }
+  .text-f1-muted      { color: var(--f1-muted); }
+  .text-f1-red        { color: var(--f1-red); }
+  .text-f1-green      { color: var(--f1-green); }
+  .text-f1-amber      { color: var(--f1-amber); }
+  .text-f1-blue       { color: var(--f1-blue); }
+
+  .border-f1-border   { border-color: var(--f1-border); }
+  .border-f1-red      { border-color: var(--f1-red); }
+
+  /* Monospace numbers — for all race data */
+  .font-data {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Sector / tire chip */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 5px;
+    font-family: ui-monospace, monospace;
+  }
+
+  /* Scrollbar — subtle dark */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--f1-border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--f1-border); border-radius: 2px; }
 }
 
-/* ── Scrollbar ────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: var(--f1-surface); }
-::-webkit-scrollbar-thumb { background: var(--f1-border); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+/* Disable tap highlight on mobile */
+button, a { -webkit-tap-highlight-color: transparent; }
 
-/* ── Utility overrides ────────────────────────────────────────────────────── */
-input[type="range"] { accent-color: var(--f1-red); }
-
-/* Tabular numbers everywhere for monospace data readability */
-.font-mono { font-feature-settings: "tnum" 1, "zero" 1; }
-
-/* Subtle scanline texture on data-dense panels */
-.scanlines::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
-  );
-  pointer-events: none;
-  z-index: 1;
+/* Live pulse animation for status indicators */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
-/* Track status flash — brief color pop when status changes */
-@keyframes status-flash {
-  0%   { opacity: 1; }
-  50%  { opacity: 0.4; }
-  100% { opacity: 1; }
+.live-pulse {
+  animation: live-pulse 1.5s ease-in-out infinite;
 }
-.status-flash { animation: status-flash 0.4s ease-out; }
 
-/* Smooth gap fill transitions for stint bars */
-@keyframes bar-fill {
-  from { opacity: 0; transform: scaleX(0); transform-origin: left; }
-  to   { opacity: 0.88; transform: scaleX(1); }
+/* Safety Car pulsing border overlay */
+@keyframes sc-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.3); }
+  50% { box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
 }
-.bar-fill { animation: bar-fill 0.3s ease-out; }
+
+.sc-pulse-overlay {
+  animation: sc-pulse 2s ease-in-out infinite;
+  border: 2px solid rgba(234, 179, 8, 0.5);
+  border-radius: 8px;
+}

@@ -1,6 +1,6 @@
 // Zustand store fed by the replay WebSocket; single source of truth for live UI.
 import { create } from "zustand";
-import type { RaceState, ReplayStatus } from "./types";
+import type { RaceState, ReplayStatus, RaceControlMessage } from "./types";
 
 type DataSource = "archive" | "live";
 
@@ -9,10 +9,14 @@ interface RaceStateStore {
   status: ReplayStatus | null;
   connected: boolean;
   source: DataSource;
+  focusedCarId: string | null;
+  raceControlMessages: RaceControlMessage[];
   setState: (s: RaceState) => void;
   setStatus: (s: ReplayStatus) => void;
   setConnected: (c: boolean) => void;
   setSource: (s: DataSource) => void;
+  setFocusedCarId: (id: string | null) => void;
+  addRaceControlMessage: (msg: RaceControlMessage) => void;
   reset: () => void;
 }
 
@@ -21,9 +25,24 @@ export const useRaceStateStore = create<RaceStateStore>((set) => ({
   status: null,
   connected: false,
   source: "archive",
+  focusedCarId: null,
+  raceControlMessages: [],
   setState: (state) => set({ state }),
   setStatus: (status) => set({ status }),
   setConnected: (connected) => set({ connected }),
   setSource: (source) => set({ source }),
-  reset: () => set({ state: null, status: null, connected: false, source: "archive" }),
+  setFocusedCarId: (focusedCarId) => set({ focusedCarId }),
+  addRaceControlMessage: (msg) =>
+    set((s) => ({
+      raceControlMessages: [msg, ...s.raceControlMessages].slice(0, 10),
+    })),
+  reset: () =>
+    set({
+      state: null,
+      status: null,
+      connected: false,
+      source: "archive",
+      focusedCarId: null,
+      raceControlMessages: [],
+    }),
 }));

@@ -1,33 +1,17 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "F1 Strategy Viewer",
-  description: "F1 archive, replay, telemetry and probabilistic strategy viewer",
+  title: "F1 Strategy | Pit Wall",
+  description: "Real-time F1 strategy dashboard with RL model recommendations",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="h-full bg-f1-surface text-f1-text">{children}</body>
+    <html lang="en" className="h-full">
+      <body className="h-full overflow-hidden bg-f1-bg text-f1-text">
+        {children}
+      </body>
     </html>
   );
 }

@@ -44,10 +44,18 @@ export interface ReplayStatus {
   finished: boolean;
 }
 
+export interface RaceControlMessage {
+  lap: number;
+  t_session_s: number;
+  message: string;
+  category: string; // "SafetyCar" | "Flag" | "DRS" | "Other"
+}
+
 export type WsMessage =
   | { type: "race_state"; data: RaceState }
   | { type: "replay_status"; data: ReplayStatus }
-  | { type: "predictions"; data: import("./prediction-types").PredictionSet };
+  | { type: "predictions"; data: import("./prediction-types").PredictionSet }
+  | { type: "race_control"; data: RaceControlMessage[] };
 
 export interface EventRow {
   round: number;

@@ -151,12 +151,15 @@ class LiveF1Feeder:
 
             client = RealF1Client(topics=_TOPICS)
 
-            @client.callback("livef1_feeder_handler")
+            # "feed" is the SignalR hub method F1 uses to push subscribed-topic data.
+            # Must use _async_run() — it runs both _run() (connection) and
+            # _forever_check() (keepalive) concurrently. _run() alone exits immediately.
+            @client.callback("feed")
             async def _handler(records: dict) -> None:
+                log.debug("LiveF1Feeder: feed received — topics: %s", list(records.keys()) if isinstance(records, dict) else type(records).__name__)
                 await self._queue.put(records)
 
-            # _run() is the async coroutine that sets up SignalR and blocks until done
-            await client._run()
+            await client._async_run()
 
         except Exception as exc:
             log.error("LiveF1Feeder: SignalR client error: %s", exc, exc_info=True)

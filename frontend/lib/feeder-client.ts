@@ -34,6 +34,8 @@ export class FeederClient {
       else if (msg.type === "replay_status") store.setStatus(msg.data);
       else if (msg.type === "predictions")
         usePredictionStore.getState().setPrediction(msg.data);
+      else if (msg.type === "race_control")
+        msg.data.forEach((m) => store.addRaceControlMessage(m));
     };
     this.ws.onclose = () => {
       store.setConnected(false);

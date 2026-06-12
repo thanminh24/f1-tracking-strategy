@@ -1,177 +1,237 @@
 "use client";
-// Canvas2D track map at 60fps. Two stacked canvases:
-//   staticCanvas — track outline, redrawn only when geo or track_status changes
-//   dynamicCanvas — car dots, redrawn every rAF with lerp between 1Hz ticks
 import { useEffect, useRef } from "react";
-import { COLORS, TRACK_STATUS_COLORS } from "../lib/design-tokens";
-import { useCanvasLoop } from "../lib/use-canvas-loop";
-import { useTrackGeo } from "../lib/use-track-geo";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
-import type { CarState } from "../lib/types";
+import { useTrackGeo } from "../lib/use-track-geo";
 
-const VIEWBOX = 1000;
-const DOT_R = 10;
-const TRACK_WIDTH = 14;
+interface Props {
+  sessionKey: string;
+}
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * clamp(t, 0, 1);
+const TRACK_STATUS_COLORS: Record<string, string> = {
+  green: "#3A3A3A",
+  yellow_zone: "#78350F",
+  vsc: "#713F12",
+  sc: "#78350F",
+  red: "#450A0A",
+};
 
-export function TrackMap({ sessionKey }: { sessionKey: string }) {
-  const geo = useTrackGeo(sessionKey);
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  geo: ReturnType<typeof useTrackGeo>,
+  state: ReturnType<typeof useRaceStateStore.getState>["state"],
+  focusedCarId: string | null
+) {
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+
+  if (!geo) return;
+
+  // Scale from VIEWBOX (1000) to canvas size
+  const scale = Math.min(width, height) / 1000;
+  const offX = (width - 1000 * scale) / 2;
+  const offY = (height - 1000 * scale) / 2;
+
+  const toCanvas = (vx: number, vy: number) => ({
+    x: offX + vx * scale,
+    y: offY + vy * scale,
+  });
+
+  // Track outline — double-pass for shadow + brightness
+  const trackColor = state ? TRACK_STATUS_COLORS[state.track_status] ?? "#3A3A3A" : "#3A3A3A";
+
+  // Shadow pass
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.lineWidth = 12 * scale;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  geo.norm.forEach(({ x, y }, i) => {
+    const c = toCanvas(x, y);
+    if (i === 0) ctx.moveTo(c.x, c.y);
+    else ctx.lineTo(c.x, c.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+
+  // Main track pass
+  ctx.strokeStyle = trackColor;
+  ctx.lineWidth = 6 * scale;
+  ctx.beginPath();
+  geo.norm.forEach(({ x, y }, i) => {
+    const c = toCanvas(x, y);
+    if (i === 0) ctx.moveTo(c.x, c.y);
+    else ctx.lineTo(c.x, c.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+
+  if (!state) return;
+
+  // Driver dots with team-color halos
+  const sorted = [...state.cars].sort((a, b) => a.position - b.position);
+  for (const car of sorted) {
+    if (car.status === "out") continue;
+    const pt = geo.at(car.lap_fraction);
+    const c = toCanvas(pt.x, pt.y);
+    const color = teamColor(car.team);
+    const isFocused = focusedCarId === car.car_id;
+
+    if (isFocused) {
+      // Focused driver: white outer ring
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 11 * scale, 0, Math.PI * 2);
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 2 * scale;
+      ctx.stroke();
+    }
+
+    // Team-color halo (outer, 40% opacity)
+    const haloRadius = isFocused ? 9 * scale : 9 * scale;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, haloRadius, 0, Math.PI * 2);
+    ctx.fillStyle = color + "66"; // 40% opacity
+    ctx.fill();
+
+    // Inner dot
+    const dotRadius = isFocused ? 8 * scale : 6 * scale;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#080808";
+    ctx.lineWidth = 1.5 * scale;
+    ctx.stroke();
+
+    // Driver code label with JetBrains Mono
+    const label = car.driver_code?.slice(0, 3) ?? car.car_id;
+    ctx.font = `bold ${Math.max(8, 10 * scale)}px "JetBrains Mono", monospace`;
+    ctx.fillStyle = "#EFEFEF";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(label, c.x, c.y - dotRadius - 1 * scale);
+  }
+}
+
+export function TrackMap({ sessionKey }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const state = useRaceStateStore((s) => s.state);
+  const geo = useTrackGeo(sessionKey);
+  const focusedCarId = useRaceStateStore((s) => s.focusedCarId);
+  const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
+  const raceControlMessages = useRaceStateStore((s) => s.raceControlMessages);
 
-  // ── Static canvas: track outline ────────────────────────────────────────
-  const staticRef = useRef<HTMLCanvasElement | null>(null);
-  const geoRef = useRef(geo);
+  // Detect SC status: any message with category "SafetyCar"
+  const scActive = raceControlMessages.length > 0 && raceControlMessages[0].category === "SafetyCar";
 
+  // Handle canvas click for driver selection
+  const handleCanvasClick = (evt: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !state) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickX = evt.clientX - rect.left;
+    const clickY = evt.clientY - rect.top;
+
+    // Find nearest car within 20px using simple distance
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const scale = Math.min(canvas.width / dpr, canvas.height / dpr) / 1000;
+    const offX = (canvas.width / dpr - 1000 * scale) / 2;
+    const offY = (canvas.height / dpr - 1000 * scale) / 2;
+
+    const toCanvas = (vx: number, vy: number) => ({
+      x: offX + vx * scale,
+      y: offY + vy * scale,
+    });
+
+    let nearest: string | null = null;
+    let minDist = 20;
+
+    for (const car of state.cars) {
+      if (car.status === "out") continue;
+      const pt = geo?.at(car.lap_fraction);
+      if (!pt) continue;
+      const c = toCanvas(pt.x, pt.y);
+      const dx = clickX - c.x;
+      const dy = clickY - c.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = car.car_id;
+      }
+    }
+
+    if (nearest) {
+      setFocusedCarId(nearest);
+    }
+  };
+
+  // DPI-aware canvas sizing with ResizeObserver
   useEffect(() => {
-    geoRef.current = geo;
-    const canvas = staticRef.current;
-    if (!canvas || !geo) return;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const updateCanvasSize = () => {
+      const rect = container.getBoundingClientRect();
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.scale(dpr, dpr);
+    };
+
+    updateCanvasSize();
+    const observer = new ResizeObserver(updateCanvasSize);
+    observer.observe(container);
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Prefetch track outline data
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      fetch(`/api/sessions/${sessionKey}/track-outline`, {
+        priority: "low",
+      }).catch(() => {});
+    }
+  }, [sessionKey]);
+
+  // Draw frame on state/geo changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = canvas.offsetWidth * ratio;
-    canvas.height = canvas.offsetHeight * ratio;
-    ctx.scale(ratio, ratio);
+    // Get logical size (after DPI scaling)
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const logicalWidth = canvas.width / dpr;
+    const logicalHeight = canvas.height / dpr;
 
-    const scaleX = canvas.offsetWidth / VIEWBOX;
-    const scaleY = canvas.offsetHeight / VIEWBOX;
-
-    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
-    ctx.beginPath();
-    for (let i = 0; i < geo.norm.length; i++) {
-      const x = geo.norm[i].x * scaleX;
-      const y = geo.norm[i].y * scaleY;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    const trackColor = TRACK_STATUS_COLORS[state?.track_status ?? "green"];
-    ctx.strokeStyle = trackColor;
-    ctx.lineWidth = TRACK_WIDTH;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.stroke();
-  }, [geo, state?.track_status]);
-
-  // ── Dynamic canvas: interpolated car dots ───────────────────────────────
-  // Refs hold previous/current tick data for interpolation
-  const prevCarsRef = useRef<CarState[]>([]);
-  const currCarsRef = useRef<CarState[]>([]);
-  const tickTimeRef = useRef(0); // initialized to 0; set to performance.now() on first tick
-
-  useEffect(() => {
-    if (!state) return;
-    prevCarsRef.current = currCarsRef.current;
-    currCarsRef.current = state.cars;
-    tickTimeRef.current = performance.now();
-  }, [state]);
-
-  const dynRef = useCanvasLoop((ctx) => {
-    const canvas = ctx.canvas;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
-
-    const ratio = window.devicePixelRatio || 1;
-    if (canvas.width !== w * ratio || canvas.height !== h * ratio) {
-      canvas.width = w * ratio;
-      canvas.height = h * ratio;
-      ctx.scale(ratio, ratio);
-    }
-
-    ctx.clearRect(0, 0, w, h);
-    const g = geoRef.current;
-    if (!g) return;
-
-    const scaleX = w / VIEWBOX;
-    const scaleY = h / VIEWBOX;
-
-    // Fraction of time elapsed since last 1Hz tick (0-1 → smooth interpolation)
-    const elapsed = performance.now() - tickTimeRef.current;
-    const t = Math.min(elapsed / 1000, 1);
-
-    const prev = new Map(prevCarsRef.current.map((c) => [c.car_id, c]));
-    const curr = currCarsRef.current;
-
-    for (const car of curr) {
-      if (car.status === "out" || car.status === "finished") continue;
-      const p = prev.get(car.car_id);
-
-      const fromFrac = p?.lap_fraction ?? car.lap_fraction;
-      // Avoid snapping backward on new lap: if fraction resets (<0.1 diff going backward), skip lerp
-      const fracDiff = car.lap_fraction - fromFrac;
-      const adjustedFrom = fracDiff < -0.5 ? car.lap_fraction : fromFrac;
-      const frac = lerp(adjustedFrom, car.lap_fraction, t);
-
-      const pt = g.at(frac);
-      const x = pt.x * scaleX;
-      const y = pt.y * scaleY;
-      const r = DOT_R * Math.min(scaleX, scaleY);
-
-      const color = teamColor(car.team);
-
-      // Outer ring for contrast
-      ctx.beginPath();
-      ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.surface;
-      ctx.fill();
-
-      // Team-colored dot
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      // Position number inside dot
-      const posSize = Math.round(9 * scaleX);
-      ctx.font = `bold ${posSize}px monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = COLORS.surface;
-      ctx.fillText(String(car.position), x, y + 0.5);
-
-      // Driver code label above the dot
-      const code = (car.driver_code ?? car.car_id).slice(0, 3).toUpperCase();
-      const labelSize = Math.max(8, Math.round(r * 1.1));
-      ctx.font = `bold ${labelSize}px monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      // Background pill for readability
-      const tw = ctx.measureText(code).width;
-      const pillW = tw + 4;
-      const pillH = labelSize + 2;
-      const pillX = x - pillW / 2;
-      const pillY = y - r - 3 - pillH;
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.fillRect(pillX, pillY, pillW, pillH);
-      ctx.fillStyle = color;
-      ctx.fillText(code, x, y - r - 3);
-    }
-  });
-
-  if (!geo) {
-    return (
-      <div className="flex items-center justify-center h-full text-f1-muted text-sm">
-        track map loading…
-      </div>
-    );
-  }
+    // Create temp canvas for logical coords
+    const tempCanvas = { width: logicalWidth, height: logicalHeight };
+    drawFrame(ctx, tempCanvas as any, geo, state, focusedCarId);
+  }, [state, geo, focusedCarId]);
 
   return (
-    <div className="relative w-full h-full">
-      {/* Static layer: track outline */}
+    <div
+      ref={containerRef}
+      className={`relative w-full h-full ${scActive ? "sc-pulse-overlay" : ""}`}
+    >
       <canvas
-        ref={staticRef}
-        className="absolute inset-0 w-full h-full"
-        style={{ imageRendering: "pixelated" }}
+        ref={canvasRef}
+        className="w-full h-full cursor-crosshair"
+        style={{ display: "block" }}
+        onClick={handleCanvasClick}
       />
-      {/* Dynamic layer: car dots at 60fps */}
-      <canvas
-        ref={dynRef as React.RefObject<HTMLCanvasElement>}
-        className="absolute inset-0 w-full h-full"
-      />
+      {scActive && (
+        <div className="absolute top-2 right-2 chip bg-amber-900/60 text-amber-400 border border-amber-400/40 pointer-events-none">
+          SC
+        </div>
+      )}
     </div>
   );
 }

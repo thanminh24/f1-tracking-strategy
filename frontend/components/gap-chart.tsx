@@ -1,157 +1,104 @@
 "use client";
-// Gap-to-leader vs lap. Team-colored polylines, pit-window probability bands,
-// grid lines, axis labels, and a moving "now" marker.
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api-client";
-import { usePredictionStore } from "../lib/prediction-store";
+import { useEffect, useRef } from "react";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
-import type { LapRow } from "../lib/types";
 
-interface Series {
-  carId: string;
-  team: string;
-  points: { lap: number; gap: number }[];
+interface GapHistory {
+  [carId: string]: { t: number; gap: number }[];
 }
 
-function buildSeries(laps: LapRow[]): { series: Series[]; maxLap: number; maxGap: number } {
-  const byCar = new Map<string, LapRow[]>();
-  for (const lap of laps) {
-    if (!byCar.has(lap.car_id)) byCar.set(lap.car_id, []);
-    byCar.get(lap.car_id)!.push(lap);
-  }
-  const cum = new Map<string, Map<number, number>>();
-  for (const [carId, rows] of byCar) {
-    let total = 0;
-    const m = new Map<number, number>();
-    for (const r of rows.sort((a, b) => a.lap_number - b.lap_number)) {
-      total += r.lap_time_ms ?? 0;
-      if (r.lap_time_ms != null) m.set(r.lap_number, total);
-    }
-    cum.set(carId, m);
-  }
-  const maxLap = Math.max(...laps.map((l) => l.lap_number));
-  const leaderAt = new Map<number, number>();
-  for (let lap = 1; lap <= maxLap; lap++) {
-    const times = [...cum.values()].map((m) => m.get(lap)).filter((t): t is number => t != null);
-    if (times.length) leaderAt.set(lap, Math.min(...times));
-  }
-  let maxGap = 0;
-  const series: Series[] = [...byCar.entries()].map(([carId, rows]) => {
-    const points: { lap: number; gap: number }[] = [];
-    for (let lap = 1; lap <= maxLap; lap++) {
-      const t = cum.get(carId)?.get(lap);
-      const lt = leaderAt.get(lap);
-      if (t != null && lt != null) {
-        const gap = (t - lt) / 1000;
-        if (gap < 120) maxGap = Math.max(maxGap, gap);
-        points.push({ lap, gap });
-      }
-    }
-    return { carId, team: rows[0].team, points };
-  });
-  return { series, maxLap, maxGap: Math.min(Math.max(maxGap, 10), 120) };
-}
+const MAX_POINTS = 120;
 
-const W = 600, H = 220, PAD_L = 34, PAD_R = 10, PAD_T = 10, PAD_B = 20;
+// Module-level history buffer — survives re-renders.
+let history: GapHistory = {};
+let lastSessionKey = "";
 
-export function GapChart({ sessionKey }: { sessionKey: string }) {
-  const [laps, setLaps] = useState<LapRow[]>([]);
-  const currentLap = useRaceStateStore((s) => s.state?.leader_lap ?? 0);
-  const prediction = usePredictionStore((s) => s.prediction);
+export function GapChart() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const state = useRaceStateStore((s) => s.state);
 
   useEffect(() => {
-    api.laps(sessionKey).then(setLaps).catch(() => setLaps([]));
-  }, [sessionKey]);
-
-  const chart = useMemo(() => (laps.length ? buildSeries(laps) : null), [laps]);
-
-  const pitBands = useMemo(() => {
-    if (!prediction) return new Map<number, number>();
-    const agg = new Map<number, number>();
-    for (const car of prediction.cars) {
-      for (const [lapStr, p] of Object.entries(car.pit_window_probs)) {
-        const lap = Number(lapStr);
-        agg.set(lap, 1 - (1 - (agg.get(lap) ?? 0)) * (1 - p));
-      }
+    if (!state) return;
+    // Reset on new session
+    if (state.session_key !== lastSessionKey) {
+      history = {};
+      lastSessionKey = state.session_key;
     }
-    return agg;
-  }, [prediction]);
+    for (const car of state.cars) {
+      if (car.gap_leader_s == null || car.position === 1) continue;
+      if (!history[car.car_id]) history[car.car_id] = [];
+      const arr = history[car.car_id];
+      arr.push({ t: state.t_session_s, gap: car.gap_leader_s });
+      if (arr.length > MAX_POINTS) arr.splice(0, arr.length - MAX_POINTS);
+    }
+  }, [state]);
 
-  if (!chart) {
-    return <div className="text-f1-muted text-xs p-4 text-center">gap chart loading…</div>;
-  }
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !state) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-  const plotW = W - PAD_L - PAD_R;
-  const plotH = H - PAD_T - PAD_B;
-  const x = (lap: number) => PAD_L + ((lap - 1) / Math.max(chart.maxLap - 1, 1)) * plotW;
-  const y = (gap: number) => PAD_T + (Math.min(gap, chart.maxGap) / chart.maxGap) * plotH;
-  const bandW = plotW / Math.max(chart.maxLap - 1, 1);
+    const { width, height } = canvas;
+    const padL = 36, padR = 8, padT = 8, padB = 20;
+    const W = width - padL - padR;
+    const H = height - padT - padB;
 
-  // Y-axis ticks
-  const yTicks: number[] = [];
-  const tickStep = chart.maxGap > 60 ? 20 : chart.maxGap > 20 ? 10 : 5;
-  for (let v = 0; v <= chart.maxGap; v += tickStep) yTicks.push(v);
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#181818";
+    ctx.fillRect(0, 0, width, height);
+
+    const allGaps = Object.values(history)
+      .flatMap((arr) => arr.map((p) => p.gap))
+      .filter((g) => g < 120);
+    if (allGaps.length === 0) return;
+
+    const maxGap = Math.max(...allGaps, 5);
+    const allTs = Object.values(history).flatMap((arr) => arr.map((p) => p.t));
+    const minT = Math.min(...allTs);
+    const maxT = Math.max(...allTs, minT + 1);
+
+    // Grid lines
+    ctx.strokeStyle = "#2D2D2D";
+    ctx.lineWidth = 1;
+    for (let g = 0; g <= maxGap; g += Math.ceil(maxGap / 4)) {
+      const y = padT + H - (g / maxGap) * H;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + W, y);
+      ctx.stroke();
+      ctx.fillStyle = "#707070";
+      ctx.font = "9px ui-monospace, monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(`${g}s`, padL - 4, y + 3);
+    }
+
+    // Lines per car
+    const sorted = [...state.cars].sort((a, b) => a.position - b.position);
+    for (const car of sorted) {
+      const pts = history[car.car_id];
+      if (!pts || pts.length < 2) continue;
+      const color = teamColor(car.team);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      pts.forEach(({ t, gap }, i) => {
+        const x = padL + ((t - minT) / (maxT - minT)) * W;
+        const y = padT + H - Math.min(gap / maxGap, 1) * H;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+  }, [state]);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-      {/* Y grid lines + labels */}
-      {yTicks.map((v) => (
-        <g key={v}>
-          <line
-            x1={PAD_L} x2={W - PAD_R}
-            y1={y(v)} y2={y(v)}
-            stroke="#1c1c1c" strokeWidth={1}
-          />
-          <text x={PAD_L - 4} y={y(v) + 3} fontSize={8} fill="#444"
-            textAnchor="end" fontFamily="var(--font-mono)">
-            {v}s
-          </text>
-        </g>
-      ))}
-
-      {/* Pit probability bands */}
-      {[...pitBands.entries()].map(([lap, p]) => (
-        <rect key={lap}
-          x={x(lap) - bandW / 2} y={PAD_T}
-          width={bandW} height={plotH}
-          fill="#38bdf8" opacity={Math.min(p, 1) * 0.18}
-        >
-          <title>{`P(any pit on lap ${lap}) = ${Math.round(p * 100)}%`}</title>
-        </rect>
-      ))}
-
-      {/* Series lines */}
-      {chart.series.map((s) => (
-        <polyline
-          key={s.carId}
-          fill="none"
-          stroke={teamColor(s.team)}
-          strokeWidth={1.2}
-          opacity={0.85}
-          strokeLinejoin="round"
-          points={s.points.map((p) => `${x(p.lap).toFixed(1)},${y(p.gap).toFixed(1)}`).join(" ")}
-        />
-      ))}
-
-      {/* Current lap marker */}
-      {currentLap > 0 && (
-        <line
-          x1={x(currentLap)} x2={x(currentLap)}
-          y1={PAD_T} y2={PAD_T + plotH}
-          stroke="rgba(255,255,255,0.4)" strokeWidth={1} strokeDasharray="3 3"
-        />
-      )}
-
-      {/* Axis bottom */}
-      <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + plotH} y2={PAD_T + plotH}
-        stroke="#252525" strokeWidth={1} />
-
-      {/* Lap label */}
-      <text x={W - PAD_R} y={H - 4} fontSize={8} fill="#444"
-        textAnchor="end" fontFamily="var(--font-mono)">
-        lap {currentLap || "—"} / {chart.maxLap}
-      </text>
-    </svg>
+    <canvas
+      ref={canvasRef}
+      width={420}
+      height={160}
+      className="w-full h-full"
+      style={{ display: "block" }}
+    />
   );
 }

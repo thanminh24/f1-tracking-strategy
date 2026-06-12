@@ -26,10 +26,14 @@ router = APIRouter(tags=["feeder"])
 async def ws_feed(websocket: WebSocket, session_key: str) -> None:
     await websocket.accept()
     try:
-        # Ensure session data is present before creating feeder
-        if not queries.session_has_laps(session_key):
-            await asyncio.to_thread(queries.ensure_session, session_key)
-            refresh_views()
+        # Archive sessions need local data loaded before the feeder can replay.
+        # Live sessions ("live", or any key whose source is "live"/"livef1") connect
+        # directly to the timing stream — archive loading would 404 on them.
+        source = registry.get_source(session_key)
+        if source == "archive":
+            if not queries.session_has_laps(session_key):
+                await asyncio.to_thread(queries.ensure_session, session_key)
+                refresh_views()
         session = registry.get_or_create(session_key)
     except ValueError as exc:
         await websocket.close(code=4404, reason=str(exc))
