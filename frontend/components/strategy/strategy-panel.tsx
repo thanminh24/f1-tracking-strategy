@@ -1,5 +1,5 @@
 "use client";
-// Full strategy sidebar: RL model card + SC gauge + pit window + what-if explorer.
+// Full strategy sidebar: RL model card + SC gauge + pit window + what-if explorer + team radio.
 import { useState } from "react";
 import { useRaceStateStore } from "../../lib/race-state-store";
 import { Panel } from "../ui/panel";
@@ -7,6 +7,7 @@ import { ModelCard } from "./model-card";
 import { ScGauge } from "./sc-gauge";
 import { PitWindowViz } from "./pit-window-viz";
 import { WhatIfPanel } from "./what-if-panel";
+import { TeamRadioTimeline } from "../widgets/team-radio-timeline";
 
 interface Props {
   sessionKey: string;
@@ -52,6 +53,14 @@ export function StrategyPanel({ sessionKey }: Props) {
       <Panel title="What-If">
         <WhatIfPanel sessionKey={sessionKey} />
       </Panel>
+
+      {/* Team radio timeline */}
+      <details className="border border-f1-border rounded overflow-hidden">
+        <summary className="cursor-pointer px-3 py-2 bg-f1-surface hover:bg-f1-surface/80 text-sm font-semibold text-f1-text">
+          📻 Team Radio
+        </summary>
+        <TeamRadioTimeline sessionKey={sessionKey} />
+      </details>
     </div>
   );
 }

@@ -51,6 +51,14 @@ export interface RaceControlMessage {
   category: string; // "SafetyCar" | "Flag" | "DRS" | "Other"
 }
 
+export interface TeamRadioMessage {
+  lap: number;
+  t_session_s: number;
+  driver_code: string;
+  msg: string | null;
+  audio_url: string | null;
+}
+
 export type WsMessage =
   | { type: "race_state"; data: RaceState }
   | { type: "replay_status"; data: ReplayStatus }
@@ -77,6 +85,9 @@ export interface LapRow {
   tyre_life: number | null;
   pit_in_ms: number | null;
   pit_out_ms: number | null;
+  sector_1_ms?: number | null;
+  sector_2_ms?: number | null;
+  sector_3_ms?: number | null;
 }
 
 export interface StintRow {
@@ -111,4 +122,13 @@ export interface TelemetrySample {
 export interface OutlinePoint {
   x: number;
   y: number;
+}
+
+export interface WeatherData {
+  air_temp_c: number | null;
+  track_temp_c: number | null;
+  humidity_pct: number | null;
+  wind_speed_ms: number | null;
+  wind_direction_deg: number | null;
+  rainfall: boolean | null;
 }

@@ -5,7 +5,9 @@ import type {
   OutlinePoint,
   ResultRow,
   StintRow,
+  TeamRadioMessage,
   TelemetrySample,
+  WeatherData,
 } from "./types";
 
 // Empty string → same-origin (nginx routes /api/* and /ws/* to backend).
@@ -40,10 +42,16 @@ export const api = {
   laps: (key: string) => getJson<LapRow[]>(`/api/sessions/${key}/laps`),
   stints: (key: string) => getJson<StintRow[]>(`/api/sessions/${key}/stints`),
   results: (key: string) => getJson<ResultRow[]>(`/api/sessions/${key}/results`),
+  weather: (key: string) =>
+    getJson<WeatherData[]>(`/api/sessions/${key}/weather`)
+      .then((rows) => rows[rows.length - 1] || { air_temp_c: null, track_temp_c: null, humidity_pct: null, wind_speed_ms: null, wind_direction_deg: null, rainfall: null })
+      .catch(() => ({ air_temp_c: null, track_temp_c: null, humidity_pct: null, wind_speed_ms: null, wind_direction_deg: null, rainfall: null })),
   trackOutline: (key: string) =>
     getJson<OutlinePoint[]>(`/api/sessions/${key}/track-outline`),
   telemetry: (key: string, carId: string, lap: number) =>
     getJson<TelemetrySample[]>(`/api/sessions/${key}/telemetry/${carId}/${lap}`),
+  teamRadio: (key: string) =>
+    getJson<TeamRadioMessage[]>(`/api/sessions/${key}/team-radio`),
   liveSession: () =>
     getJson<{ session_key: string | null; openf1_key: number | null; status: string; session_type?: string; circuit?: string; year?: number }>("/api/live/current-session"),
 };
