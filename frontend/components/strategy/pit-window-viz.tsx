@@ -2,6 +2,7 @@
 // Bar chart of pit probability by lap for a selected car.
 import { usePredictionStore } from "../../lib/prediction-store";
 import { useRaceStateStore } from "../../lib/race-state-store";
+import { topPitWindows } from "../../lib/prediction-display";
 
 interface Props {
   carId?: string | null;
@@ -18,11 +19,10 @@ export function PitWindowViz({ carId }: Props) {
   const car = prediction.cars.find((c) => c.car_id === targetId) ?? prediction.cars[0];
   if (!car) return null;
 
-  const entries = Object.entries(car.pit_window_probs)
-    .map(([lap, p]) => ({ lap: Number(lap), p }))
-    .filter(({ p }) => p > 0.02)
-    .sort((a, b) => a.lap - b.lap)
-    .slice(0, 15);
+  const entries = topPitWindows(car, 15).map(({ key, probability }) => ({
+    lap: Number(key),
+    p: probability,
+  }));
 
   if (entries.length === 0) {
     return (

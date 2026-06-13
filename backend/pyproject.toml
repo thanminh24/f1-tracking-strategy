@@ -23,7 +23,7 @@ dependencies = [
     "stable-baselines3>=2.4",
     "uvicorn[standard]>=0.49.0",
     "httpx>=0.28.1",
-    "livef1>=1.2.0",
+    "websockets>=14.0",
 ]
 
 [project.scripts]
@@ -32,7 +32,11 @@ f1-build-archive-db = "f1_strategy.archive.build_db:main"
 f1-calibrate = "f1_strategy.sim.calibration.cli:main"
 f1-train-models = "f1_strategy.strategy.train_models_cli:main"
 f1-train-ppo = "f1_strategy.strategy.ppo_agent.train:main"
+f1-train-rsrl = "f1_strategy.strategy.rsrl_agent.train:main"
 f1-batch-calibrate = "f1_strategy.sim.calibration.cli:batch_main"
+f1-model-baseline-report = "f1_strategy.strategy.evaluation.baseline_cli:main"
+f1-model-tournament = "f1_strategy.strategy.evaluation.tournament_cli:main"
+f1-explain-rsrl = "f1_strategy.strategy.rsrl_agent.explain_cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]

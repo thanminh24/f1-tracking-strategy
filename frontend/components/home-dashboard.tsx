@@ -1,61 +1,73 @@
 "use client";
+// Home screen — lives inside AppShell so it looks like the app, not an external chooser.
+// Two tabs: Live (schedule + join) and Archive (year/event/session picker with ensure).
+import { useState } from "react";
 import { AppShell } from "./shell/app-shell";
-import { F1Logo } from "./ui/f1-logo";
-import { LiveSessionCard } from "./home/live-session-card";
-import { ReplayBrowserCard } from "./home/replay-browser-card";
-import { QuickSessionEntry } from "./home/quick-session-entry";
 import { BackendOfflineCard } from "./home/backend-offline-card";
-
-interface LiveSession {
-  session_key: string | null;
-  openf1_key: number | null;
-  status: string;
-  session_type?: string;
-  circuit?: string;
-  year?: number;
-}
+import { LiveSchedule } from "./home/live-schedule";
+import { ArchiveBrowser } from "./home/archive-browser";
+import type { ScheduleSession } from "../lib/api-client";
 
 interface Props {
-  seasons: number[];
-  liveSession: LiveSession | null;
-  backendOnline?: boolean;
+  schedule: ScheduleSession[];
+  backendOnline: boolean;
 }
 
-export function HomeDashboard({ seasons, liveSession, backendOnline = true }: Props) {
-  const liveAvailable = liveSession?.session_key != null;
-  const isOffline = !backendOnline && seasons.length === 0 && !liveAvailable;
+type HomeTab = "live" | "archive";
+
+export function HomeDashboard({ schedule, backendOnline }: Props) {
+  const hasLiveActivity = schedule.some(
+    (s) => s.status === "active" || s.status === "upcoming"
+  );
+  const [tab, setTab] = useState<HomeTab>(hasLiveActivity ? "live" : "archive");
+
+  if (!backendOnline) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center h-full gap-6 p-6">
+          <BackendOfflineCard />
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
-      <div className="flex flex-col items-center justify-center min-h-full gap-8 p-6">
-        {/* Hero */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <F1Logo className="h-10 w-auto" />
-          <h1 className="text-2xl font-bold text-f1-text tracking-tight">Pit Wall</h1>
-          <p className="text-sm text-f1-text-dim max-w-sm">
-            Real-time F1 strategy dashboard with RL model recommendations
-          </p>
-        </div>
+      {/* Tab bar — same style as the session dashboard tab bar */}
+      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-f1-border bg-f1-surface shrink-0">
+        <button
+          onClick={() => setTab("live")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-semibold transition-colors ${
+            tab === "live"
+              ? "bg-f1-panel text-f1-text"
+              : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
+          }`}
+        >
+          {hasLiveActivity && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-f1-red live-pulse" />
+          )}
+          Live
+        </button>
+        <button
+          onClick={() => setTab("archive")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-semibold transition-colors ${
+            tab === "archive"
+              ? "bg-f1-panel text-f1-text"
+              : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
+          }`}
+        >
+          Archive
+        </button>
+      </div>
 
-        {/* Offline fallback — replaces all cards */}
-        {isOffline && <BackendOfflineCard />}
-
-        {/* Main content: two-card layout + quick entry */}
-        {!isOffline && (
-          <>
-            {/* Two-card grid: LIVE | REPLAY */}
-            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-2xl">
-              <div className="flex-1">
-                <LiveSessionCard liveSession={liveSession} />
-              </div>
-              <div className="flex-1">
-                <ReplayBrowserCard seasons={seasons} backendOnline={backendOnline} />
-              </div>
-            </div>
-
-            {/* Quick session entry — always visible power-user shortcut */}
-            <QuickSessionEntry />
-          </>
+      {/* Tab content */}
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        {tab === "live" ? (
+          <LiveSchedule
+            initialSchedule={schedule.filter((s) => s.status !== "recent")}
+          />
+        ) : (
+          <ArchiveBrowser />
         )}
       </div>
     </AppShell>

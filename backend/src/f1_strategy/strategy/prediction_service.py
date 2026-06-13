@@ -8,6 +8,7 @@ degrades to None so the replay stream never stalls on the strategy layer.
 import logging
 import os
 import time
+from datetime import UTC, datetime
 
 from f1_strategy.archive import queries
 from f1_strategy.models import RaceState
@@ -15,7 +16,13 @@ from f1_strategy.sim.params import SimParams
 from f1_strategy.strategy.behavior_model import BehaviorModel
 from f1_strategy.strategy.mc_engine import run_mc
 from f1_strategy.strategy.ppo_agent.policy import PPOPolicy
-from f1_strategy.strategy.prediction_schema import CarPrediction, PredictionMeta, PredictionSet
+from f1_strategy.strategy.prediction_schema import (
+    CarPrediction,
+    ModelRecommendation,
+    PredictionMeta,
+    PredictionSet,
+)
+from f1_strategy.strategy.rsrl_agent.policy import RSRLPolicy
 from f1_strategy.strategy.sc_hazard import SCHazardModel
 
 log = logging.getLogger(__name__)
@@ -26,6 +33,26 @@ def _mc_budget() -> tuple[int, int]:
     n = int(os.environ.get("F1_MC_ROLLOUTS", "500"))
     draws = max(4, min(20, n // 25))
     return draws, max(1, n // draws)
+
+
+def resolve_prediction_artifact_key(session_key: str) -> tuple[int, str]:
+    """Return (season, circuit) used to load calibration/model artifacts."""
+    meta = queries.get_session_meta(session_key)
+    if not meta.empty:
+        circuit = meta["circuit"].iloc[0]
+        season = int(meta["year"].iloc[0])
+        circuit_name = "" if circuit is None else str(circuit).strip()
+        if circuit_name and circuit_name.lower() not in {"nan", "nat", "none"}:
+            return season, circuit_name
+
+    if session_key == "live":
+        from f1_strategy.feeder.livef1_schedule_client import get_current_session_sync
+
+        session = get_current_session_sync()
+        if session and session.circuit:
+            return datetime.now(UTC).year, session.circuit
+
+    raise FileNotFoundError(f"no session metadata for {session_key}")
 
 
 class PredictionService:
@@ -40,6 +67,7 @@ class PredictionService:
         self.behavior: BehaviorModel | None = None
         self.sc_model: SCHazardModel | None = None
         self.ppo: PPOPolicy | None = None
+        self.rsrl: RSRLPolicy | None = None
         self._load_attempted = False
 
     def _load(self) -> None:
@@ -48,12 +76,12 @@ class PredictionService:
             return
         self._load_attempted = True
         try:
-            meta = queries.get_session_meta(self.session_key)
-            circuit, season = meta["circuit"].iloc[0], int(meta["year"].iloc[0])
+            season, circuit = resolve_prediction_artifact_key(self.session_key)
             params = SimParams.load(season, circuit)
             behavior = BehaviorModel()
             sc_model = SCHazardModel.load(season)
             ppo = PPOPolicy(season, circuit)
+            rsrl = _load_rsrl_policy(season, circuit)
         except FileNotFoundError:
             log.info("no calibration for %s — predictions disabled", self.session_key)
             return
@@ -62,6 +90,7 @@ class PredictionService:
             return
         # commit only after every artifact loaded — no partially-available state
         self.params, self.behavior, self.sc_model, self.ppo = params, behavior, sc_model, ppo
+        self.rsrl = rsrl
 
     @property
     def available(self) -> bool:
@@ -92,16 +121,41 @@ class PredictionService:
             recs = self.ppo.recommend(state, params) if self.ppo else {}
         except Exception:
             log.exception("PPO inference failed: %s lap %s", self.session_key, lap)
+        rsrl_recs: dict = {}
+        rsrl_seqs: dict = {}
+        try:
+            if self.rsrl:
+                rsrl_recs = self.rsrl.recommend(state, params)
+                rsrl_seqs = self.rsrl.sequences_for_state(state, params)
+        except Exception:
+            log.exception("RSRL inference failed: %s lap %s", self.session_key, lap)
 
         if mc is None and not recs:
             return None
         cars = []
         for cid in (mc.car_ids if mc else recs.keys()):
             rec = recs.get(cid, {})
+            model_recommendations = {}
+            if cid in rsrl_recs:
+                rsrl_rec = rsrl_recs[cid]
+                top_factors: list[dict] = []
+                if cid in rsrl_seqs and self.rsrl is not None:
+                    try:
+                        from f1_strategy.strategy.rsrl_agent.explain import perturbation_importance
+                        top_factors = [
+                            fi.to_dict()
+                            for fi in perturbation_importance(self.rsrl, rsrl_seqs[cid], top_n=3)
+                        ]
+                    except Exception:
+                        log.debug("RSRL explanation failed for car %s", cid)
+                model_recommendations["rsrl"] = ModelRecommendation(
+                    **rsrl_rec, top_factors=top_factors
+                )
             cars.append(CarPrediction(
                 car_id=cid,
                 recommended_action=rec.get("recommended_action"),
                 action_probs=rec.get("action_probs", {}),
+                model_recommendations=model_recommendations,
                 pit_window_probs=mc.pit_window(cid) if mc else {},
                 next_compound_probs=mc.compound_dist(cid) if mc else {},
                 outcome=mc.outcome(cid) if mc else _empty_outcome(),
@@ -116,6 +170,7 @@ class PredictionService:
                     "behavior": f"{self.behavior.meta.get('version')}:"
                                 f"{self.behavior.meta.get('quality')}",
                     "ppo": self.ppo.version if self.ppo else "none",
+                    "rsrl": self.rsrl.version if self.rsrl else "disabled",
                 },
                 compute_ms=round((time.perf_counter() - t0) * 1000, 1),
             ),
@@ -126,3 +181,11 @@ def _empty_outcome():
     from f1_strategy.strategy.prediction_schema import OutcomeProbs
 
     return OutcomeProbs(win=0.0, podium=0.0, points=0.0, expected_position=0.0)
+
+
+def _load_rsrl_policy(season: int, circuit: str) -> RSRLPolicy | None:
+    if os.environ.get("F1_RSRL_SHADOW") != "1":
+        return None
+    from f1_strategy.config import get_settings
+
+    return RSRLPolicy(get_settings().models_dir / f"rsrl_{season}_{circuit}.pt")

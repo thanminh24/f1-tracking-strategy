@@ -1,11 +1,18 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
 import { useTrackGeo } from "../lib/use-track-geo";
+import { DRS_ZONES, normalizeDrsCircuit } from "../lib/drs-zones";
+import { drawDrsZones } from "../lib/draw-drs-zones";
 
 interface Props {
   sessionKey: string;
+  circuit?: string;
+  /** F1 internal circuit key from SessionInfo.Meeting.Circuit.Key (live only) */
+  circuitKey?: number;
+  /** Session year for multiviewer API lookup */
+  sessionYear?: number;
 }
 
 const TRACK_STATUS_COLORS: Record<string, string> = {
@@ -16,12 +23,25 @@ const TRACK_STATUS_COLORS: Record<string, string> = {
   red: "#450A0A",
 };
 
+// For live sessions we also have the raw status string code ("1"-"7")
+const LIVE_TRACK_STATUS: Record<string, { trackColor: string; bySector?: boolean }> = {
+  "1": { trackColor: "#3A3A3A" },
+  "2": { trackColor: "#78350F", bySector: true },
+  "3": { trackColor: "#78350F", bySector: true },
+  "4": { trackColor: "#78350F" },    // Safety Car
+  "5": { trackColor: "#450A0A" },    // Red Flag
+  "6": { trackColor: "#713F12" },    // VSC
+  "7": { trackColor: "#713F12" },    // VSC Ending
+};
+
 function drawFrame(
   ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
+  canvas: { width: number; height: number },
   geo: ReturnType<typeof useTrackGeo>,
   state: ReturnType<typeof useRaceStateStore.getState>["state"],
-  focusedCarId: string | null
+  focusedCarId: string | null,
+  circuit: string | undefined,
+  showDrs: boolean
 ) {
   const { width, height } = canvas;
   ctx.clearRect(0, 0, width, height);
@@ -69,11 +89,26 @@ function drawFrame(
 
   if (!state) return;
 
+  // DRS zones (before driver dots so they appear behind)
+  if (showDrs && circuit) {
+    const circuitKey = normalizeDrsCircuit(circuit);
+    const zones = circuitKey ? DRS_ZONES[circuitKey] : undefined;
+    if (zones) {
+      const isGreen = state.track_status === "green";
+      const drsColor = isGreen ? "#22C55E" : "#707070";
+      drawDrsZones(ctx, geo, zones, drsColor, offX, offY, scale);
+    }
+  }
+
   // Driver dots with team-color halos
   const sorted = [...state.cars].sort((a, b) => a.position - b.position);
   for (const car of sorted) {
     if (car.status === "out") continue;
-    const pt = geo.at(car.lap_fraction);
+
+    // Use real GPS coords when available (live mode), else arc-length fraction
+    const pt = (car.x != null && car.y != null)
+      ? geo.projectRaw(car.x, car.y)
+      : geo.at(car.lap_fraction);
     const c = toCanvas(pt.x, pt.y);
     const color = teamColor(car.team);
     const isFocused = focusedCarId === car.car_id;
@@ -114,17 +149,23 @@ function drawFrame(
   }
 }
 
-export function TrackMap({ sessionKey }: Props) {
+export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const state = useRaceStateStore((s) => s.state);
-  const geo = useTrackGeo(sessionKey);
+  const isLive = sessionKey === "live";
+  // Live sessions: prefer multiviewer API via circuitKey.
+  // Fallback: old circuit-name-based endpoint for archive sessions.
+  const geoKey = !isLive && circuit ? `circuit:${circuit}` : sessionKey;
+  const geo = useTrackGeo(geoKey, isLive ? circuitKey : undefined, sessionYear);
   const focusedCarId = useRaceStateStore((s) => s.focusedCarId);
   const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
-  const raceControlMessages = useRaceStateStore((s) => s.raceControlMessages);
+  const [showDrs, setShowDrs] = useState(true);
+  // Version counter incremented on resize so the draw effect re-fires after canvas reset.
+  const [sizeVersion, setSizeVersion] = useState(0);
 
-  // Detect SC status: any message with category "SafetyCar"
-  const scActive = raceControlMessages.length > 0 && raceControlMessages[0].category === "SafetyCar";
+  // SC status from authoritative track_status field.
+  const scActive = state?.track_status === "sc" || state?.track_status === "vsc";
 
   // Handle canvas click for driver selection
   const handleCanvasClick = (evt: React.MouseEvent<HTMLCanvasElement>) => {
@@ -151,7 +192,9 @@ export function TrackMap({ sessionKey }: Props) {
 
     for (const car of state.cars) {
       if (car.status === "out") continue;
-      const pt = geo?.at(car.lap_fraction);
+      const pt = (car.x != null && car.y != null && geo)
+        ? geo.projectRaw(car.x, car.y)
+        : geo?.at(car.lap_fraction);
       if (!pt) continue;
       const c = toCanvas(pt.x, pt.y);
       const dx = clickX - c.x;
@@ -184,7 +227,11 @@ export function TrackMap({ sessionKey }: Props) {
     };
 
     updateCanvasSize();
-    const observer = new ResizeObserver(updateCanvasSize);
+    const observer = new ResizeObserver(() => {
+      updateCanvasSize();
+      // Bump version so the draw effect re-fires after canvas context reset.
+      setSizeVersion((v) => v + 1);
+    });
     observer.observe(container);
 
     return () => observer.disconnect();
@@ -192,12 +239,12 @@ export function TrackMap({ sessionKey }: Props) {
 
   // Prefetch track outline data
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      fetch(`/api/sessions/${sessionKey}/track-outline`, {
-        priority: "low",
-      }).catch(() => {});
-    }
-  }, [sessionKey]);
+    if (typeof window === "undefined") return;
+    const url = sessionKey === "live" && circuit
+      ? `/api/circuits/${encodeURIComponent(circuit)}/track-outline`
+      : `/api/sessions/${sessionKey}/track-outline`;
+    fetch(url, { priority: "low" }).catch(() => {});
+  }, [sessionKey, circuit]);
 
   // Draw frame on state/geo changes
   useEffect(() => {
@@ -213,25 +260,56 @@ export function TrackMap({ sessionKey }: Props) {
 
     // Create temp canvas for logical coords
     const tempCanvas = { width: logicalWidth, height: logicalHeight };
-    drawFrame(ctx, tempCanvas as any, geo, state, focusedCarId);
-  }, [state, geo, focusedCarId]);
+    drawFrame(ctx, tempCanvas, geo, state, focusedCarId, circuit, showDrs);
+  }, [state, geo, focusedCarId, circuit, showDrs, sizeVersion]);
 
   return (
     <div
       ref={containerRef}
       className={`relative w-full h-full ${scActive ? "sc-pulse-overlay" : ""}`}
     >
+      {/* Skeleton shown while track outline is loading */}
+      {!geo && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+          <svg viewBox="0 0 220 130" className="w-48 opacity-[0.12] animate-pulse">
+            {/* Generic F1-circuit-like placeholder shape */}
+            <path
+              d="M40,90 Q10,90 10,65 L10,50 Q10,20 35,15 L80,10 Q110,8 130,15 L170,28
+                 Q195,35 205,55 L208,75 Q210,100 190,108 L150,118 Q120,125 90,120 L55,112 Q42,108 40,90 Z"
+              fill="none"
+              stroke="#888"
+              strokeWidth="10"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="text-[11px] text-f1-muted">Loading track…</span>
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         className="w-full h-full cursor-crosshair"
         style={{ display: "block" }}
         onClick={handleCanvasClick}
       />
-      {scActive && (
-        <div className="absolute top-2 right-2 chip bg-amber-900/60 text-amber-400 border border-amber-400/40 pointer-events-none">
-          SC
-        </div>
-      )}
+      <div className="absolute top-2 right-2 flex gap-2 z-10">
+        {scActive && (
+          <div className="chip bg-amber-900/60 text-amber-400 border border-amber-400/40 pointer-events-none text-[10px]">
+            SC
+          </div>
+        )}
+        {normalizeDrsCircuit(circuit) && (
+          <button
+            onClick={() => setShowDrs(s => !s)}
+            className={`chip text-[10px] font-medium transition-colors ${
+              showDrs
+                ? "bg-green-900/60 text-green-400 border border-green-400/40"
+                : "bg-zinc-800 text-f1-text-dim border border-f1-border"
+            }`}
+          >
+            DRS
+          </button>
+        )}
+      </div>
     </div>
   );
 }

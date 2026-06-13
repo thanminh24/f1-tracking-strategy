@@ -4,9 +4,30 @@
 UV := uv
 BACKEND := cd backend &&
 
-.PHONY: dev dev-backend dev-frontend test lint ingest ingest-backfill build-archive-db clean-scratch calibrate-all train-models train-ppo
+.PHONY: dev dev-backend dev-frontend start stop status test lint ingest ingest-backfill build-archive-db clean-scratch calibrate-all train-models train-ppo
 
-dev: ## run backend :8000 + frontend :3000 concurrently
+start: ## background both servers, logs in ./logs/ (use stop to shut down)
+	./start.sh
+
+stop: ## stop background servers started by start.sh
+	./stop.sh
+
+status: ## show whether backend/frontend are running
+	@for name in backend frontend; do \
+	  f=logs/$$name.pid; \
+	  if [ -f "$$f" ]; then \
+	    PID=$$(cat "$$f"); \
+	    if kill -0 "$$PID" 2>/dev/null; then \
+	      echo "$$name running (PID $$PID)"; \
+	    else \
+	      echo "$$name stale PID $$PID (not running)"; \
+	    fi; \
+	  else \
+	    echo "$$name not started"; \
+	  fi; \
+	done
+
+dev: ## run backend :8000 + frontend :3000 concurrently (foreground)
 	$(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend:

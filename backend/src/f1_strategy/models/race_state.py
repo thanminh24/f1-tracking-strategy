@@ -63,6 +63,9 @@ class CarState(BaseModel):
     tire: TireState | None = None
     pit_stops: int = 0
     status: CarStatus = CarStatus.RUNNING
+    # Live GPS coordinates (F1 Cartesian, meters). None for archive/pre-warmup.
+    x: float | None = None
+    y: float | None = None
     # Series extensions — None for F1:
     car_class: str | None = None  # multi-class series (Hypercar/LMGT3...)
     fuel_state: dict | None = None  # refueling series
@@ -79,3 +82,16 @@ class RaceState(BaseModel):
     cars: list[CarState]  # variable length — series-agnostic
     weather: WeatherState | None = None
     rc_messages: list[RaceControlMsg] = Field(default_factory=list)  # new since last tick
+
+    # Live-only extended fields — None for archive/replay sessions.
+    # Raw dicts from SignalR Core topic state, serialised as-is to JSON.
+    driver_list: dict | None = None          # DriverList: {nr: {Tla, TeamColour, …}}
+    live_timing: dict | None = None          # TimingData.Lines: {nr: {Sectors, KnockedOut, …}}
+    live_timing_session_part: int | None = None  # TimingData.SessionPart 1=Q1 2=Q2 3=Q3
+    live_timing_app: dict | None = None      # TimingAppData.Lines: {nr: {Stints: {…}}}
+    live_timing_stats: dict | None = None    # TimingStats.Lines: {nr: {BestSpeeds: {St, …}}}
+    extrapolated_clock: dict | None = None   # {Remaining: "0:43:27", Extrapolating: bool}
+    championship: dict | None = None         # ChampionshipPrediction {Drivers, Teams}
+    lap_count: dict | None = None            # {CurrentLap, TotalLaps}
+    team_radio_captures: list | None = None  # [{Utc, RacingNumber, Path}, …]
+    session_info: dict | None = None         # {Name, Path, Meeting: {Circuit: {Key}}, …}

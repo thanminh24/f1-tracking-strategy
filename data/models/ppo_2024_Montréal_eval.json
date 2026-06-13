@@ -1,0 +1,10 @@
+{
+ "ppo_mean_position": 10.27,
+ "best_fixed": "one_stop",
+ "best_fixed_mean_position": 9.07,
+ "mean_position_gain": -1.1999999999999993,
+ "head_to_head_win_rate": 0.33,
+ "n_sims": 100,
+ "gate_passed": false,
+ "note": "full plan gate (>=1.5s mean gain) requires 500-sim eval on backfilled data"
+}

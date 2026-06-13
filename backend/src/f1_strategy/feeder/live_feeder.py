@@ -39,9 +39,14 @@ _FLAG_MAP: dict[str, TrackStatus] = {
 
 # Compound name normalization (OpenF1 uses uppercase strings like "SOFT")
 _COMPOUND_MAP: dict[str, str] = {
-    "SOFT": "SOFT", "MEDIUM": "MEDIUM", "HARD": "HARD",
-    "INTERMEDIATE": "INTERMEDIATE", "WET": "WET",
-    "HYPERSOFT": "SOFT", "ULTRASOFT": "SOFT", "SUPERSOFT": "SOFT",
+    "SOFT": "SOFT",
+    "MEDIUM": "MEDIUM",
+    "HARD": "HARD",
+    "INTERMEDIATE": "INTERMEDIATE",
+    "WET": "WET",
+    "HYPERSOFT": "SOFT",
+    "ULTRASOFT": "SOFT",
+    "SUPERSOFT": "SOFT",
     "SUPERHARD": "HARD",
 }
 
@@ -91,22 +96,32 @@ def _assemble(
         drv_stints = sorted(by_driver_stints.get(dn, []), key=lambda s: s.stint_number)
         if drv_stints:
             latest = drv_stints[-1]
-            compound = _COMPOUND_MAP.get((latest.compound or "").upper(), latest.compound or "MEDIUM")
+            compound = _COMPOUND_MAP.get(
+                (latest.compound or "").upper(),
+                latest.compound or "MEDIUM",
+            )
             age = lap - (latest.lap_start or 1) + latest.tyre_age_at_start + 1
             tire = TireState(compound=compound, age_laps=max(0, age), stint=latest.stint_number)
 
-        cars.append(CarState(
-            car_id=str(dn),
-            driver_code=drv.name_acronym if drv else None,
-            team=(drv.team_name or "").lower() if drv else None,
-            position=pos.position or 0,
-            lap=lap,
-            lap_fraction=0.0,   # OpenF1 position endpoint has x/y but no lap_fraction
-            gap_leader_s=None,  # would require cumulative lap-time reconstruction
-            tire=tire,
-            pit_stops=pit_counts.get(dn, 0),
-            status=CarStatus.PITTING if pit_counts.get(dn, 0) > 0 and lap == 0 else CarStatus.RUNNING,
-        ))
+        status = (
+            CarStatus.PITTING
+            if pit_counts.get(dn, 0) > 0 and lap == 0
+            else CarStatus.RUNNING
+        )
+        cars.append(
+            CarState(
+                car_id=str(dn),
+                driver_code=drv.name_acronym if drv else None,
+                team=(drv.team_name or "").lower() if drv else None,
+                position=pos.position or 0,
+                lap=lap,
+                lap_fraction=0.0,
+                gap_leader_s=None,
+                tire=tire,
+                pit_stops=pit_counts.get(dn, 0),
+                status=status,
+            )
+        )
 
     cars.sort(key=lambda c: (c.position or 99))
     track_status = _track_status_from_rc(rc)
@@ -161,8 +176,11 @@ class LiveFeeder:
         if key == "live":
             session = await self._client.current_live_session()
             if session:
-                log.info("LiveFeeder: auto-detected OpenF1 session_key=%d (%s)",
-                         session.session_key, session.session_type)
+                log.info(
+                    "LiveFeeder: auto-detected OpenF1 session_key=%d (%s)",
+                    session.session_key,
+                    session.session_type,
+                )
                 return session.session_key
             log.warning("LiveFeeder: no active session found in OpenF1")
             return None
@@ -173,7 +191,11 @@ class LiveFeeder:
             year, round_num = int(parts[0]), int(parts[1])
             session = await self._client.find_session(year, round_num)
             if session:
-                log.info("LiveFeeder: resolved %s → OpenF1 session_key=%d", key, session.session_key)
+                log.info(
+                    "LiveFeeder: resolved %s → OpenF1 session_key=%d",
+                    key,
+                    session.session_key,
+                )
                 return session.session_key
             log.warning("LiveFeeder: could not resolve %s in OpenF1", key)
 
@@ -182,14 +204,21 @@ class LiveFeeder:
     async def ticks(self) -> AsyncIterator[RaceState]:
         self._of1_key = await self._resolve_openf1_key()
         if self._of1_key is None:
-            log.warning("LiveFeeder: no OpenF1 session resolved for %s — yielding nothing", self.session_key)
+            log.warning(
+                "LiveFeeder: no OpenF1 session resolved for %s — yielding nothing",
+                self.session_key,
+            )
             return
 
         # Pre-fetch driver roster once (rarely changes during a session)
         drivers = await self._client.drivers(self._of1_key)
         t_start = time.monotonic()
 
-        log.info("LiveFeeder: polling OpenF1 session_key=%d for %s", self._of1_key, self.session_key)
+        log.info(
+            "LiveFeeder: polling OpenF1 session_key=%d for %s",
+            self._of1_key,
+            self.session_key,
+        )
         while not self._finished:
             t0 = time.monotonic()
             positions, stints, pits, rc = await asyncio.gather(
@@ -205,7 +234,15 @@ class LiveFeeder:
                 continue
 
             t_session = time.monotonic() - t_start
-            state, finished_flag = _assemble(positions, stints, pits, rc, drivers, self.session_key, t_session)
+            state, finished_flag = _assemble(
+                positions,
+                stints,
+                pits,
+                rc,
+                drivers,
+                self.session_key,
+                t_session,
+            )
             if finished_flag:
                 self._finished = True
 

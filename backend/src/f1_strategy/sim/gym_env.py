@@ -27,7 +27,7 @@ def _sample_rival_strategy(
 
     If behavior model is not usable, falls back to random one-stop/two-stop heuristic.
     """
-    from f1_strategy.strategy.behavior_model import BehaviorModel, COMPOUND_CLASSES, PIT_FEATURES
+    from f1_strategy.strategy.behavior_model import COMPOUND_CLASSES, BehaviorModel
 
     bm = BehaviorModel()
     if not bm.usable:
@@ -43,17 +43,19 @@ def _sample_rival_strategy(
     compound = "SOFT"  # typical start compound
     for lap in range(1, L + 1):
         race_frac = lap / max(L, 1)
-        rows.append({
-            "tire_age": tire_age,
-            "age_vs_typical": tire_age - 20.0,
-            "race_frac": race_frac,
-            "laps_left": L - lap,
-            "position": position,
-            "stint": stint,
-            "comp_soft": float(compound == "SOFT"),
-            "comp_medium": float(compound == "MEDIUM"),
-            "comp_hard": float(compound == "HARD"),
-        })
+        rows.append(
+            {
+                "tire_age": tire_age,
+                "age_vs_typical": tire_age - 20.0,
+                "race_frac": race_frac,
+                "laps_left": L - lap,
+                "position": position,
+                "stint": stint,
+                "comp_soft": float(compound == "SOFT"),
+                "comp_medium": float(compound == "MEDIUM"),
+                "comp_hard": float(compound == "HARD"),
+            }
+        )
         tire_age += 1
 
     feat = pd.DataFrame(rows)

@@ -23,15 +23,23 @@ class SourceRequest(BaseModel):
 
 
 async def _openf1_available() -> bool:
-    """Quick probe: returns True if OpenF1 is accessible (not blocked for live session)."""
+    """Quick probe: returns True if OpenF1 is accessible (not live-session restricted)."""
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(OPENF1_LIVE_URL)
-            if r.status_code == 403 or (
-                r.status_code == 200
-                and "restricted to authenticated" in r.text.lower()
-            ):
+            # OpenF1 returns 401 or 403 during live sessions; 200 with restriction JSON
+            if r.status_code in (401, 403):
                 return False
+            if r.status_code == 200:
+                body = r.text.lower()
+                if "restricted" in body or "authenticated" in body or "buy.stripe" in body:
+                    return False
+                try:
+                    data = r.json()
+                    if isinstance(data, dict) and "detail" in data:
+                        return False  # restriction response is a dict with "detail"
+                except Exception:
+                    pass
             return r.status_code < 500
     except Exception:
         return False
@@ -46,7 +54,11 @@ async def get_source(session_key: str) -> dict:
         "available_sources": ["archive", "live", "livef1"],
         "live_available": openf1_ok,
         "livef1_available": True,  # SignalR stream; always accessible
-        "note": None if openf1_ok else "OpenF1 restricted during live session — use 'livef1' source",
+        "note": (
+            None
+            if openf1_ok
+            else "OpenF1 restricted during live session — use 'livef1' source"
+        ),
     }
 
 

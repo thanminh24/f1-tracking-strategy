@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api-client";
 import { TeamRadioMessage } from "../../lib/types";
-import { teamColor } from "../../lib/team-colors";
 
 interface Props {
   sessionKey: string;
@@ -42,20 +41,28 @@ export function TeamRadioTimeline({ sessionKey }: Props) {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    setError(false);
-    api
-      .teamRadio(sessionKey)
+    let cancelled = false;
+    Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        setLoading(true);
+        setError(false);
+        return api.teamRadio(sessionKey);
+      })
       .then((data) => {
+        if (cancelled || !data) return;
         // Sort by lap descending (newest first)
         data.sort((a, b) => b.lap - a.lap || b.t_session_s - a.t_session_s);
         // Keep only top 200 messages to avoid DOM bloat
         setMessages(data.slice(0, 200));
       })
       .catch(() => {
-        setError(true);
+        if (!cancelled) setError(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [sessionKey]);
 
   return (

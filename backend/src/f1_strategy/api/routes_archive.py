@@ -9,7 +9,11 @@ from fastapi import APIRouter, HTTPException, Response
 
 from f1_strategy.archive import queries
 from f1_strategy.archive.db import refresh_views
-from f1_strategy.archive.telemetry_service import get_lap_telemetry, get_track_outline
+from f1_strategy.archive.telemetry_service import (
+    get_circuit_outline,
+    get_lap_telemetry,
+    get_track_outline,
+)
 
 router = APIRouter(prefix="/api", tags=["archive"])
 log = logging.getLogger(__name__)
@@ -42,6 +46,16 @@ def _records(df: pd.DataFrame) -> list[dict]:
 @router.get("/seasons")
 def seasons() -> list[int]:
     return queries.list_seasons()
+
+
+@router.get("/calendar/{year}")
+async def calendar(year: int) -> list[dict]:
+    from dataclasses import asdict
+
+    from f1_strategy.feeder.fastf1_calendar_client import get_calendar
+
+    events = await get_calendar(year)
+    return [asdict(e) for e in events]
 
 
 @router.get("/events/{year}")
@@ -104,6 +118,16 @@ def track_outline(session_key: str, response: Response) -> list[dict]:
         return data
     except Exception as exc:
         raise HTTPException(404, f"track outline unavailable: {exc}") from exc
+
+
+@router.get("/circuits/{circuit}/track-outline")
+def circuit_track_outline(circuit: str, response: Response) -> list[dict]:
+    try:
+        data = get_circuit_outline(circuit).to_dict(orient="records")
+        response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+        return data
+    except Exception as exc:
+        raise HTTPException(404, f"circuit outline unavailable: {exc}") from exc
 
 
 @router.get("/sessions/{session_key}/telemetry/{car_id}/{lap}")

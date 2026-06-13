@@ -6,7 +6,7 @@ Backs off on HTTP 429 per Retry-After header.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -76,7 +76,8 @@ class OpenF1Client:
     async def _get(self, path: str, **params: object) -> list[dict]:
         """GET with 429-backoff. Returns [] on any network/HTTP error."""
         try:
-            r = await self._http.get(path, params={k: v for k, v in params.items() if v is not None})
+            filtered_params = {k: v for k, v in params.items() if v is not None}
+            r = await self._http.get(path, params=filtered_params)
             if r.status_code == 429:
                 delay = int(r.headers.get("Retry-After", "5"))
                 log.warning("OpenF1 429 on %s — sleeping %ds", path, delay)
@@ -140,7 +141,7 @@ class OpenF1Client:
         Prefers a session that started most recently so Practice 1 doesn't override
         an ongoing Practice 2 on the same day.
         """
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(hours=4)).strftime("%Y-%m-%d")
         sessions = await self.sessions(date_start=f">={cutoff}")
         if not sessions:
             return None
@@ -151,13 +152,18 @@ class OpenF1Client:
     async def current_race_session(self) -> OF1Session | None:
         """Return the ongoing or most recent Race session only. Use current_live_session
         for practice/qualifying."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=4)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(hours=4)).strftime("%Y-%m-%d")
         sessions = await self.sessions(session_type="Race", date_start=f">={cutoff}")
         if not sessions:
             return None
         return sessions[-1]
 
-    async def find_session(self, year: int, round_number: int, session_type: str = "Race") -> OF1Session | None:
+    async def find_session(
+        self,
+        year: int,
+        round_number: int,
+        session_type: str = "Race",
+    ) -> OF1Session | None:
         """Resolve an archived session by F1 year + round + session type."""
         sessions = await self.sessions(year=year, session_type=session_type)
         sessions.sort(key=lambda s: s.session_key)

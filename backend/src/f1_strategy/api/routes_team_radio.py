@@ -50,13 +50,17 @@ async def get_team_radio(key: str) -> list[dict]:
         if hasattr(session, "_team_radio") and session._team_radio:
             for entry in session._team_radio:
                 try:
-                    messages.append({
-                        "lap": int(entry.get("lap", 0)),
-                        "t_session_s": float(entry.get("t_session_s", 0)),
-                        "driver_code": str(entry.get("driver", entry.get("driver_code", ""))).upper(),
-                        "msg": entry.get("msg") or entry.get("message"),
-                        "audio_url": None,  # FastF1 doesn't provide direct audio URLs
-                    })
+                    messages.append(
+                        {
+                            "lap": int(entry.get("lap", 0)),
+                            "t_session_s": float(entry.get("t_session_s", 0)),
+                            "driver_code": str(
+                                entry.get("driver", entry.get("driver_code", ""))
+                            ).upper(),
+                            "msg": entry.get("msg") or entry.get("message"),
+                            "audio_url": None,
+                        }
+                    )
                 except (ValueError, TypeError):
                     # Skip malformed entries
                     continue

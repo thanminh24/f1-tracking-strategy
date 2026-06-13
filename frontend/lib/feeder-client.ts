@@ -2,6 +2,7 @@
 // Drop-in replacement for ReplayWsClient — same control API, same store pushes.
 // Adds source() / setSource() for archive ↔ live switching (phase 5).
 import { API_BASE, WS_BASE } from "./api-client";
+import { useLiveTelemetryStore } from "./live-telemetry-store";
 import { usePredictionStore } from "./prediction-store";
 import { useRaceStateStore } from "./race-state-store";
 import type { WsMessage } from "./types";
@@ -29,18 +30,25 @@ export class FeederClient {
       this.retryMs = 1000;
     };
     this.ws.onmessage = (ev) => {
-      const msg: WsMessage = JSON.parse(ev.data);
+      let msg: WsMessage;
+      try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "race_state") store.setState(msg.data);
       else if (msg.type === "replay_status") store.setStatus(msg.data);
       else if (msg.type === "predictions")
         usePredictionStore.getState().setPrediction(msg.data);
       else if (msg.type === "race_control")
         msg.data.forEach((m) => store.addRaceControlMessage(m));
+      else if (msg.type === "telemetry")
+        useLiveTelemetryStore.getState().setAll(msg.data);
     };
     this.ws.onclose = () => {
       store.setConnected(false);
       if (!this.closed) {
-        setTimeout(() => this.open(), this.retryMs);
+        store.setReconnecting(true);
+        setTimeout(() => {
+          store.setReconnecting(false);
+          this.open();
+        }, this.retryMs);
         this.retryMs = Math.min(this.retryMs * 2, 10_000);
       }
     };
@@ -78,5 +86,6 @@ export class FeederClient {
     this.ws?.close();
     useRaceStateStore.getState().reset();
     usePredictionStore.getState().reset();
+    useLiveTelemetryStore.getState().reset();
   }
 }

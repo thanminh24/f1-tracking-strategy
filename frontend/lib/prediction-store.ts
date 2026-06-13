@@ -8,6 +8,7 @@ const SPARK_LEN = 30;
 interface PredictionStore {
   prediction: PredictionSet | null;
   scHistory: { lap: number; p1: number }[];
+  scHistory5: { lap: number; p5: number }[];
   setPrediction: (p: PredictionSet) => void;
   reset: () => void;
 }
@@ -15,6 +16,7 @@ interface PredictionStore {
 export const usePredictionStore = create<PredictionStore>((set) => ({
   prediction: null,
   scHistory: [],
+  scHistory5: [],
   setPrediction: (prediction) =>
     set((s) => ({
       prediction,
@@ -22,8 +24,12 @@ export const usePredictionStore = create<PredictionStore>((set) => ({
         ...s.scHistory.filter((h) => h.lap !== prediction.lap),
         { lap: prediction.lap, p1: prediction.sc_prob_1lap },
       ].slice(-SPARK_LEN),
+      scHistory5: [
+        ...s.scHistory5.filter((h) => h.lap !== prediction.lap),
+        { lap: prediction.lap, p5: prediction.sc_prob_5laps },
+      ].slice(-SPARK_LEN),
     })),
-  reset: () => set({ prediction: null, scHistory: [] }),
+  reset: () => set({ prediction: null, scHistory: [], scHistory5: [] }),
 }));
 
 /** Predictions more than 2 laps away (either direction — backwards seek included)

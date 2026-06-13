@@ -1,6 +1,7 @@
 import { api } from "../../../lib/api-client";
 import { AppShell } from "../../../components/shell/app-shell";
 import type { EventRow } from "../../../lib/types";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +11,12 @@ interface Props {
 
 function SessionLink({ sessionKey, type }: { sessionKey: string; type: string }) {
   return (
-    <a
+    <Link
       href={`/session/${sessionKey}`}
       className="px-3 py-1 rounded text-xs font-data border border-f1-border bg-f1-surface hover:bg-f1-panel hover:border-f1-border-light transition-colors text-f1-text-dim hover:text-f1-text"
     >
       {type}
-    </a>
+    </Link>
   );
 }
 
@@ -33,9 +34,8 @@ function EventCard({ event, year }: { event: EventRow; year: number }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        {event.session_types.map((type, idx) => {
-          // session key format: {year}_{round}_{sessionIndex+1}
-          const sessionKey = `${year}_${event.round}_${idx + 1}`;
+        {event.session_types.map((type) => {
+          const sessionKey = `${year}_${event.round}_${type}`;
           return <SessionLink key={type} sessionKey={sessionKey} type={type} />;
         })}
       </div>
@@ -58,9 +58,9 @@ export default async function SeasonPage({ params }: Props) {
     <AppShell sessionLabel={`${year} Season`}>
       <div className="max-w-3xl mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <a href="/" className="text-xs text-f1-text-dim hover:text-f1-text transition-colors">
+          <Link href="/" className="text-xs text-f1-text-dim hover:text-f1-text transition-colors">
             ← Home
-          </a>
+          </Link>
           <h1 className="text-xl font-bold text-f1-text">{year} Season</h1>
           <span className="font-data text-xs text-f1-muted">{events.length} events</span>
         </div>

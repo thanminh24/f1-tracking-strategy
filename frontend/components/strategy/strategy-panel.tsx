@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRaceStateStore } from "../../lib/race-state-store";
 import { Panel } from "../ui/panel";
 import { ModelCard } from "./model-card";
+import { HeadToHeadCard } from "./head-to-head-card";
 import { ScGauge } from "./sc-gauge";
 import { PitWindowViz } from "./pit-window-viz";
 import { WhatIfPanel } from "./what-if-panel";
@@ -38,6 +39,9 @@ export function StrategyPanel({ sessionKey }: Props) {
 
       {/* RL recommendation card */}
       <ModelCard focusCarId={effectiveCar} />
+
+      {/* Head-to-head comparison */}
+      <HeadToHeadCard />
 
       {/* Safety car probability */}
       <Panel title="Safety Car Risk">

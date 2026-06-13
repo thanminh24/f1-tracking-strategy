@@ -1,20 +1,23 @@
-"""LiveF1Feeder: real-time F1 data via the official SignalR timing endpoint.
+"""LiveF1Feeder: real-time F1 data via SignalR Core (livetiming.formula1.com/signalrcore).
 
-Uses the `livef1` package (RealF1Client) which wraps livetiming.formula1.com/signalr/
-— the same source multiviewer and FastF1 use. No API key required for live sessions.
-
-Implements the same IFeeder protocol as LiveFeeder so it's a drop-in replacement
-when OpenF1 restricts access (which happens during live race weekends on the free tier).
+No authentication or F1TV subscription required — only the free public timing endpoint.
+Implements the same IFeeder protocol as ArchiveFeeder so it's a drop-in replacement.
 
 Data flow:
-  SignalR → RealF1Client callback → asyncio.Queue → ticks() async generator → RaceState
+  SignalRCore → on_snapshot/on_update callbacks → asyncio.Queue
+  → _apply() handler → accumulated per-driver state + raw topic state
+  → _build_state() → RaceState (broadcast to WebSocket clients)
 """
 
 import asyncio
 import logging
+import re
 import time
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
+from typing import Any
 
+from f1_strategy.feeder.signalr_core_client import merge
 from f1_strategy.models.race_state import (
     CarState,
     CarStatus,
@@ -27,18 +30,12 @@ from f1_strategy.models.race_state import (
 
 log = logging.getLogger(__name__)
 
-# Topics we subscribe to
-_TOPICS = [
-    "TimingData",       # positions, gaps, lap times, sectors
-    "TimingAppData",    # tyre compounds per driver
-    "TrackStatus",      # SC, VSC, red flag, green
-    "DriverList",       # driver numbers → codes + team names
-    "WeatherData",      # rainfall, temperature
-]
+_LAPS_REMAINING_RE = re.compile(r"(\d+)\s+LAPS?\s+REMAINING", re.IGNORECASE)
 
 _TRACK_STATUS_MAP: dict[str, TrackStatus] = {
     "1": TrackStatus.GREEN,
     "2": TrackStatus.YELLOW_ZONE,
+    "3": TrackStatus.YELLOW_ZONE,
     "4": TrackStatus.SC,
     "5": TrackStatus.RED,
     "6": TrackStatus.VSC,
@@ -47,256 +44,451 @@ _TRACK_STATUS_MAP: dict[str, TrackStatus] = {
 
 _COMPOUND_MAP: dict[str, str] = {
     "SOFT": "SOFT", "MEDIUM": "MEDIUM", "HARD": "HARD",
-    "INTERMEDIATE": "INTERMEDIATE", "WET": "WET",
+    "INTERMEDIATE": "INTER", "WET": "WET",
     "HYPERSOFT": "SOFT", "ULTRASOFT": "SOFT", "SUPERSOFT": "SOFT",
     "SUPERHARD": "HARD",
 }
 
 
 class LiveF1Feeder:
-    """IFeeder backed by the F1 official SignalR timing stream.
-
-    Fallback for when OpenF1 restricts access during live sessions.
-    Works for: Race, Qualifying, Sprint, Practice sessions.
-    """
+    """IFeeder backed by F1 official SignalR Core timing stream (no auth required)."""
 
     is_live: bool = True
 
     def __init__(self, session_key: str) -> None:
         self.session_key = session_key
 
-        # Accumulated state — updated by SignalR callbacks
-        self._positions: dict[str, int] = {}          # driver_no → position
-        self._gaps: dict[str, str] = {}               # driver_no → gap string (e.g. "+3.4")
-        self._laps: dict[str, int] = {}               # driver_no → lap number
-        self._compounds: dict[str, str] = {}          # driver_no → compound name
-        self._tyre_ages: dict[str, int] = {}          # driver_no → tyre age
-        self._tyre_stints: dict[str, int] = {}        # driver_no → stint number
-        self._pit_stops: dict[str, int] = {}          # driver_no → pit count
-        self._driver_codes: dict[str, str] = {}       # driver_no → 3-letter code
-        self._driver_teams: dict[str, str] = {}       # driver_no → team name
+        # Per-driver accumulated state
+        self._positions: dict[str, int] = {}
+        self._gaps: dict[str, str] = {}
+        self._intervals: dict[str, str] = {}
+        self._laps: dict[str, int] = {}
+        self._last_laps: dict[str, int] = {}
+        self._best_laps: dict[str, int] = {}
+        self._compounds: dict[str, str] = {}
+        self._tyre_ages: dict[str, int] = {}
+        self._tyre_stints: dict[str, int] = {}
+        self._pit_stops: dict[str, int] = {}
+        self._was_in_pit: dict[str, bool] = {}
+        self._driver_codes: dict[str, str] = {}
+        self._driver_teams: dict[str, str] = {}
+        self._positions_xy: dict[str, tuple[float, float]] = {}
+        self._telemetry: dict[str, deque] = defaultdict(lambda: deque(maxlen=300))
+
+        # Session state
         self._track_status: TrackStatus = TrackStatus.GREEN
         self._weather: WeatherState = WeatherState()
         self._rc_messages: list[RaceControlMsg] = []
+        self._rc_msg_count: int = 0
+        self._total_laps: int | None = None
         self._finished: bool = False
+
+        # Full merged topic state — surfaced as extended live fields in RaceState
+        self._raw_state: dict[str, Any] = {}
+
+        # Session identity for reconnect-on-change
+        self._session_name: str = ""
+        self._session_changed: bool = False
 
         self._state: RaceState | None = None
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=500)
         self._t_start: float = 0.0
         self._bg_task: asyncio.Task | None = None
 
-    # ---- IFeeder interface -------------------------------------------------
+    # ── IFeeder interface ────────────────────────────────────────────────────
 
     async def ticks(self) -> AsyncIterator[RaceState]:
         self._t_start = time.monotonic()
 
-        # Start the SignalR client as a background task in THIS event loop
-        self._bg_task = asyncio.create_task(self._run_signalr())
-        log.info("LiveF1Feeder: SignalR task started for session %s", self.session_key)
+        while not self._finished:
+            self._session_changed = False
+            self._bg_task = asyncio.create_task(self._run_signalr_core())
+            log.info("LiveF1Feeder: SignalR Core task started for %s", self.session_key)
 
-        try:
-            while not self._finished:
-                # Drain accumulated queue updates
-                deadline = asyncio.get_event_loop().time() + 1.0
-                while True:
-                    remaining = deadline - asyncio.get_event_loop().time()
-                    if remaining <= 0:
-                        break
+            try:
+                while not self._finished and not self._session_changed:
+                    deadline = asyncio.get_event_loop().time() + 1.0
+                    while True:
+                        remaining = deadline - asyncio.get_event_loop().time()
+                        if remaining <= 0:
+                            break
+                        try:
+                            msg = await asyncio.wait_for(
+                                self._queue.get(), timeout=remaining
+                            )
+                            self._apply(msg)
+                        except TimeoutError:
+                            break
+
+                    state = self._build_state()
+                    if state.cars:
+                        self._state = state
+                        yield state
+            finally:
+                if self._bg_task and not self._bg_task.done():
+                    self._bg_task.cancel()
                     try:
-                        records = await asyncio.wait_for(self._queue.get(), timeout=remaining)
-                        self._apply(records)
-                    except asyncio.TimeoutError:
-                        break
+                        await self._bg_task
+                    except asyncio.CancelledError:
+                        pass
 
-                state = self._build_state()
-                if state.cars:
-                    self._state = state
-                    yield state
-
-        finally:
-            if self._bg_task and not self._bg_task.done():
-                self._bg_task.cancel()
-                try:
-                    await self._bg_task
-                except asyncio.CancelledError:
-                    pass
+            if self._session_changed and not self._finished:
+                log.info("LiveF1Feeder: session changed, reconnecting in 3s")
+                await asyncio.sleep(3.0)
 
     def current_state(self) -> RaceState | None:
         return self._state
 
     def status(self) -> dict:
         return {
-            "source": "livef1_signalr",
+            "source": "livef1_signalr_core",
             "playing": True,
             "speed": 1.0,
             "t_session_s": self._state.t_session_s if self._state else 0.0,
             "finished": self._finished,
         }
 
-    # Live sources: playback controls are no-ops
     def play(self) -> None: pass
     def pause(self) -> None: pass
-    def set_speed(self, _speed: float) -> None: pass
-    def seek_lap(self, _lap: int) -> None: pass
+    def set_speed(self, _: float) -> None: pass
+    def seek_lap(self, _: int) -> None: pass
 
     @property
     def finished(self) -> bool:
         return self._finished
 
-    # ---- SignalR background task -------------------------------------------
+    def get_telemetry(self) -> dict[str, list[dict]]:
+        return {dn: list(buf) for dn, buf in self._telemetry.items() if buf}
 
-    async def _run_signalr(self) -> None:
+    # ── SignalR Core background task ─────────────────────────────────────────
+
+    async def _run_signalr_core(self) -> None:
+        from f1_strategy.feeder.signalr_core_client import listen as signalr_listen
+
+        async def on_snapshot(snapshot: dict) -> None:
+            await self._queue.put({"_type": "snapshot", "data": snapshot})
+
+        async def on_update(topic: str, delta: Any, utc: str) -> None:
+            await self._queue.put({"_type": "update", "topic": topic, "delta": delta})
+
         try:
-            from livef1.adapters.realtime_client import RealF1Client
+            await signalr_listen(on_snapshot, on_update)
+        except Exception as exc:
+            log.error("LiveF1Feeder: SignalR Core error: %s", exc, exc_info=True)
 
-            client = RealF1Client(topics=_TOPICS)
+    # ── State accumulation ───────────────────────────────────────────────────
 
-            # "feed" is the SignalR hub method F1 uses to push subscribed-topic data.
-            # Must use _async_run() — it runs both _run() (connection) and
-            # _forever_check() (keepalive) concurrently. _run() alone exits immediately.
-            @client.callback("feed")
-            async def _handler(records: dict) -> None:
-                log.debug("LiveF1Feeder: feed received — topics: %s", list(records.keys()) if isinstance(records, dict) else type(records).__name__)
-                await self._queue.put(records)
+    def _apply(self, msg: dict) -> None:
+        msg_type = msg.get("_type")
+        if msg_type == "snapshot":
+            snapshot: dict = msg["data"]
+            for topic, data in snapshot.items():
+                self._raw_state[topic] = data
+            for topic, data in snapshot.items():
+                self._apply_topic(topic, data, is_snapshot=True)
 
-            await client._async_run()
+        elif msg_type == "update":
+            topic: str = msg["topic"]
+            delta: Any = msg["delta"]
+            if topic not in self._raw_state:
+                self._raw_state[topic] = delta if isinstance(delta, dict) else {}
+            else:
+                self._raw_state[topic] = merge(self._raw_state[topic], delta)
+            self._apply_topic(topic, self._raw_state[topic], is_snapshot=False)
+
+    def _apply_topic(self, topic: str, data: Any, is_snapshot: bool) -> None:  # noqa: ARG002
+        if not isinstance(data, dict):
+            return
+        try:
+            if topic == "TimingData":
+                for dn, rec in (data.get("Lines") or {}).items():
+                    if isinstance(rec, dict):
+                        self._apply_timing_driver(str(dn), rec)
+
+            elif topic == "TimingAppData":
+                for dn, rec in (data.get("Lines") or {}).items():
+                    if isinstance(rec, dict):
+                        self._apply_tyre_driver(str(dn), rec)
+
+            elif topic == "TrackStatus":
+                self._apply_track_status(data)
+
+            elif topic == "DriverList":
+                for dn, rec in data.items():
+                    if isinstance(rec, dict):
+                        self._apply_driver(str(dn), rec)
+
+            elif topic == "WeatherData":
+                self._apply_weather(data)
+
+            elif topic == "RaceControlMessages":
+                full_msgs = data.get("Messages") or []
+                if isinstance(full_msgs, list):
+                    for m in full_msgs[self._rc_msg_count:]:
+                        if isinstance(m, dict):
+                            self._apply_race_control_msg(m)
+                    self._rc_msg_count = len(full_msgs)
+
+            elif topic == "Position.z":
+                self._apply_position_z(data)
+
+            elif topic == "CarData.z":
+                self._apply_cardata_z(data)
+
+            elif topic == "LapCount":
+                tc = data.get("TotalLaps")
+                if tc is not None:
+                    try:
+                        self._total_laps = int(tc)
+                    except (ValueError, TypeError):
+                        pass
+
+            elif topic == "SessionInfo":
+                self._apply_session_info(data)
 
         except Exception as exc:
-            log.error("LiveF1Feeder: SignalR client error: %s", exc, exc_info=True)
+            log.debug("LiveF1Feeder: apply_topic %s failed: %s", topic, exc)
 
-    # ---- State accumulation ------------------------------------------------
+    # ── Per-topic handlers ───────────────────────────────────────────────────
 
-    def _apply(self, records: dict) -> None:
-        """Merge one batch of SignalR callback records into accumulated state."""
-        for topic, data_list in records.items():
-            for record in data_list:
-                if not isinstance(record, dict):
-                    continue
-                try:
-                    if topic == "TimingData":
-                        self._apply_timing(record)
-                    elif topic == "TimingAppData":
-                        self._apply_tyre_app(record)
-                    elif topic == "TrackStatus":
-                        self._apply_track_status(record)
-                    elif topic == "DriverList":
-                        self._apply_driver_list(record)
-                    elif topic == "WeatherData":
-                        self._apply_weather(record)
-                except Exception as exc:
-                    log.debug("LiveF1Feeder: failed to apply %s record: %s", topic, exc)
+    @staticmethod
+    def _parse_laptime(val: object) -> int | None:
+        if val is None:
+            return None
+        s = str(val).strip()
+        if not s or s in ("---", "--", ""):
+            return None
+        try:
+            if ":" in s:
+                mins, secs = s.split(":", 1)
+                return int(float(mins) * 60_000 + float(secs) * 1_000)
+            return int(float(s) * 1_000)
+        except (ValueError, TypeError):
+            return None
 
-    def _apply_timing(self, rec: dict) -> None:
-        dn = str(rec.get("DriverNo") or rec.get("driver_no") or "")
-        if not dn:
-            return
-        if "Position" in rec or "position" in rec:
-            val = rec.get("Position") or rec.get("position")
+    @staticmethod
+    def _nested(rec: dict, *keys: str) -> Any:
+        v: Any = rec
+        for k in keys:
+            if not isinstance(v, dict):
+                return None
+            v = v.get(k)
+        return v
+
+    def _apply_timing_driver(self, dn: str, rec: dict) -> None:
+        pos = rec.get("Position")
+        if pos is not None:
             try:
-                self._positions[dn] = int(val)
-            except (TypeError, ValueError):
+                self._positions[dn] = int(pos)
+            except (ValueError, TypeError):
                 pass
-        if "GapToLeader" in rec or "gap_to_leader" in rec:
-            val = rec.get("GapToLeader") or rec.get("gap_to_leader") or ""
-            self._gaps[dn] = str(val)
-        if "NumberOfLaps" in rec or "number_of_laps" in rec:
-            val = rec.get("NumberOfLaps") or rec.get("number_of_laps")
-            try:
-                self._laps[dn] = int(val)
-            except (TypeError, ValueError):
-                pass
-        # Pit stop detection via InPit flag
-        if rec.get("InPit") or rec.get("in_pit"):
-            current = self._pit_stops.get(dn, 0)
-            self._pit_stops[dn] = current  # count is incremented via pit lane flag changes
 
-    def _apply_tyre_app(self, rec: dict) -> None:
-        dn = str(rec.get("DriverNo") or rec.get("driver_no") or "")
-        if not dn:
+        gap = rec.get("GapToLeader") or ""
+        if gap:
+            self._gaps[dn] = str(gap)
+
+        interval = (
+            self._nested(rec, "IntervalToPositionAhead", "Value")
+            or rec.get("GapToNext")
+            or ""
+        )
+        if interval:
+            self._intervals[dn] = str(interval)
+
+        laps = rec.get("NumberOfLaps")
+        if laps is not None:
+            try:
+                self._laps[dn] = int(laps)
+            except (ValueError, TypeError):
+                pass
+
+        last_val = self._nested(rec, "LastLapTime", "Value") or rec.get("LastLapTime")
+        if last_val and not isinstance(last_val, dict):
+            ms = self._parse_laptime(last_val)
+            if ms:
+                self._last_laps[dn] = ms
+
+        best_val = self._nested(rec, "BestLapTime", "Value") or rec.get("BestLapTime")
+        if best_val and not isinstance(best_val, dict):
+            ms = self._parse_laptime(best_val)
+            if ms:
+                self._best_laps[dn] = ms
+
+        in_pit = rec.get("InPit")
+        if in_pit is not None:
+            in_pit_now = in_pit is True or in_pit == 1
+            was = self._was_in_pit.get(dn, False)
+            if in_pit_now and not was:
+                self._pit_stops[dn] = self._pit_stops.get(dn, 0) + 1
+            self._was_in_pit[dn] = in_pit_now
+
+    def _apply_tyre_driver(self, dn: str, rec: dict) -> None:
+        stints = rec.get("Stints") or {}
+        items = list(stints.items()) if isinstance(stints, dict) else list(enumerate(stints))
+        if not items:
             return
-        compound = rec.get("Compound") or rec.get("compound") or ""
+        try:
+            latest_idx, latest = max(items, key=lambda kv: int(kv[0]))
+        except (ValueError, TypeError):
+            return
+        if not isinstance(latest, dict):
+            return
+        compound = latest.get("Compound") or ""
         if compound:
             self._compounds[dn] = _COMPOUND_MAP.get(compound.upper(), compound.upper())
-        age = rec.get("TotalLaps") or rec.get("tyre_age") or rec.get("StartLaps")
+        age = latest.get("TotalLaps")
         if age is not None:
             try:
                 self._tyre_ages[dn] = int(age)
-            except (TypeError, ValueError):
+            except (ValueError, TypeError):
                 pass
-        stint = rec.get("Stint") or rec.get("stint_number")
-        if stint is not None:
-            try:
-                self._tyre_stints[dn] = int(stint)
-            except (TypeError, ValueError):
-                pass
+        try:
+            self._tyre_stints[dn] = int(latest_idx) + 1
+        except (ValueError, TypeError):
+            pass
 
-    def _apply_track_status(self, rec: dict) -> None:
-        status_code = str(rec.get("Status") or rec.get("status") or "1")
-        self._track_status = _TRACK_STATUS_MAP.get(status_code, TrackStatus.GREEN)
-        message = str(rec.get("Message") or rec.get("message") or "")
-        if message:
-            self._rc_messages.append(
-                RaceControlMsg(
-                    t_session_s=time.monotonic() - self._t_start,
-                    lap=None,
-                    category="TrackStatus",
-                    message=message,
-                )
-            )
-            # Keep last 10 RC messages
-            if len(self._rc_messages) > 10:
-                self._rc_messages = self._rc_messages[-10:]
-        if "CHEQUERED" in message.upper() or "FINISHED" in message.upper():
+    def _apply_track_status(self, data: dict) -> None:
+        code = str(data.get("Status") or "1")
+        self._track_status = _TRACK_STATUS_MAP.get(code, TrackStatus.GREEN)
+        msg = str(data.get("Message") or "")
+        if "CHEQUERED" in msg.upper() or "FINISHED" in msg.upper():
             self._finished = True
 
-    def _apply_driver_list(self, rec: dict) -> None:
-        dn = str(rec.get("DriverNo") or rec.get("driver_no") or rec.get("RacingNumber") or "")
-        if not dn:
-            return
-        code = rec.get("Tla") or rec.get("driver_code") or rec.get("NameAcronym") or ""
-        team = rec.get("TeamName") or rec.get("team_name") or ""
+    def _apply_driver(self, dn: str, rec: dict) -> None:
+        code = rec.get("Tla") or rec.get("NameAcronym") or ""
+        team = rec.get("TeamName") or ""
         if code:
             self._driver_codes[dn] = str(code)
         if team:
             self._driver_teams[dn] = str(team).lower()
 
-    def _apply_weather(self, rec: dict) -> None:
-        rainfall = rec.get("Rainfall") or rec.get("rainfall")
+    def _apply_weather(self, data: dict) -> None:
+        def _f(k: str) -> float | None:
+            v = data.get(k)
+            try:
+                return float(v) if v is not None else None
+            except (ValueError, TypeError):
+                return None
+
+        rainfall_raw = data.get("Rainfall")
+        rainfall = bool(
+            rainfall_raw and str(rainfall_raw) not in ("0", "false", "False", "")
+        )
         self._weather = WeatherState(
-            rainfall=bool(rainfall and str(rainfall).lower() not in ("0", "false", "")),
+            air_temp_c=_f("AirTemp"),
+            track_temp_c=_f("TrackTemp"),
+            humidity_pct=_f("Humidity"),
+            rainfall=rainfall,
+            wind_speed_ms=_f("WindSpeed"),
         )
 
-    # ---- State builder -----------------------------------------------------
+    def _apply_race_control_msg(self, msg: dict) -> None:
+        text = str(msg.get("Message") or "")
+        if not text:
+            return
+        flag = str(msg.get("Flag") or "").upper()
+        text_upper = text.upper()
 
-    def _gap_to_seconds(self, gap_str: str) -> float | None:
-        """Convert gap string '+3.456' or '1L' → float seconds, or None."""
-        if not gap_str:
+        if "SAFETY CAR" in text_upper or flag in ("SC", "SAFETY CAR"):
+            category = "SafetyCar"
+        elif "VIRTUAL" in text_upper or flag == "VSC":
+            category = "SafetyCar"
+        elif flag in ("RED", "CHEQUERED", "GREEN", "YELLOW", "DOUBLE YELLOW"):
+            category = "Flag"
+        elif "DRS" in text_upper:
+            category = "DRS"
+        else:
+            category = "Other"
+
+        lap = msg.get("Lap")
+        self._rc_messages.append(RaceControlMsg(
+            t_session_s=time.monotonic() - self._t_start,
+            lap=int(lap) if lap is not None and str(lap).isdigit() else None,
+            category=category,
+            message=text,
+        ))
+        if len(self._rc_messages) > 20:
+            self._rc_messages = self._rc_messages[-20:]
+
+        if "CHEQUERED" in text_upper or "SESSION ENDED" in text_upper:
+            self._finished = True
+
+        m = _LAPS_REMAINING_RE.search(text)
+        if m and self._laps:
+            remaining = int(m.group(1))
+            leader_lap = max(self._laps.values(), default=0)
+            self._total_laps = leader_lap + remaining
+
+    def _apply_position_z(self, data: dict) -> None:
+        for frame in (data.get("Position") or []):
+            if not isinstance(frame, dict):
+                continue
+            for dn, entry in (frame.get("Entries") or {}).items():
+                if not isinstance(entry, dict):
+                    continue
+                x, y = entry.get("X"), entry.get("Y")
+                if x is not None and y is not None:
+                    try:
+                        self._positions_xy[str(dn)] = (float(x), float(y))
+                    except (TypeError, ValueError):
+                        pass
+
+    def _apply_cardata_z(self, data: dict) -> None:
+        now = time.monotonic() - self._t_start
+        for frame in (data.get("Entries") or []):
+            if not isinstance(frame, dict):
+                continue
+            for dn, car in (frame.get("Cars") or {}).items():
+                ch = car.get("Channels") or {} if isinstance(car, dict) else {}
+                try:
+                    self._telemetry[str(dn)].append({
+                        "t":        now,
+                        "rpm":      int(ch.get("0", 0)),   # channel 0 = RPM
+                        "speed":    int(ch.get("2", 0)),   # channel 2 = speed km/h
+                        "gear":     int(ch.get("3", 0)),   # channel 3 = gear
+                        "throttle": int(ch.get("4", 0)),   # channel 4 = throttle %
+                        "brake":    int(ch.get("5", 0)),   # channel 5 = brake %
+                        "drs":      int(ch.get("45", 0)),  # channel 45 = DRS state
+                    })
+                except (TypeError, ValueError):
+                    pass
+
+    def _apply_session_info(self, data: dict) -> None:
+        name = data.get("Name") or ""
+        if name:
+            if self._session_name and name != self._session_name:
+                log.info(
+                    "LiveF1Feeder: session name '%s'→'%s', reconnecting",
+                    self._session_name, name,
+                )
+                self._session_name = name
+                self._session_changed = True
+            else:
+                self._session_name = name
+
+    # ── State builder ────────────────────────────────────────────────────────
+
+    def _gap_to_seconds(self, gap: str) -> float | None:
+        if not gap:
             return None
-        s = gap_str.strip().lstrip("+").strip()
+        s = gap.strip().lstrip("+").strip()
         if s.endswith("L"):
-            return None  # lapped car — skip gap
+            return None
         try:
             return float(s)
         except ValueError:
             return None
 
     def _build_state(self) -> RaceState:
-        all_drivers = (
-            set(self._positions)
-            | set(self._laps)
-            | set(self._driver_codes)
-        )
-
+        all_drivers = set(self._positions) | set(self._laps) | set(self._driver_codes)
         cars: list[CarState] = []
         for dn in all_drivers:
-            compound = self._compounds.get(dn, "MEDIUM")
-            age = self._tyre_ages.get(dn, 0)
-            stint = self._tyre_stints.get(dn, 1)
-            tire = TireState(compound=compound, age_laps=age, stint=stint)
-
-            gap_str = self._gaps.get(dn, "")
-            gap_s = self._gap_to_seconds(gap_str)
-
+            tire = TireState(
+                compound=self._compounds.get(dn, "MEDIUM"),
+                age_laps=self._tyre_ages.get(dn, 0),
+                stint=self._tyre_stints.get(dn, 1),
+            )
+            xy = self._positions_xy.get(dn)
             cars.append(CarState(
                 car_id=dn,
                 driver_code=self._driver_codes.get(dn),
@@ -304,21 +496,46 @@ class LiveF1Feeder:
                 position=self._positions.get(dn, 0),
                 lap=self._laps.get(dn, 0),
                 lap_fraction=0.0,
-                gap_leader_s=gap_s,
+                gap_leader_s=self._gap_to_seconds(self._gaps.get(dn, "")),
+                interval_s=self._gap_to_seconds(self._intervals.get(dn, "")),
+                last_lap_ms=self._last_laps.get(dn),
+                best_lap_ms=self._best_laps.get(dn),
                 tire=tire,
                 pit_stops=self._pit_stops.get(dn, 0),
                 status=CarStatus.RUNNING,
+                x=xy[0] if xy else None,
+                y=xy[1] if xy else None,
             ))
-
         cars.sort(key=lambda c: (c.position or 99))
         leader_lap = max((c.lap for c in cars), default=0)
+
+        raw_td  = self._raw_state.get("TimingData") or {}
+        raw_tad = self._raw_state.get("TimingAppData") or {}
+        raw_ts  = self._raw_state.get("TimingStats") or {}
+        raw_ec  = self._raw_state.get("ExtrapolatedClock") or {}
+        raw_cp  = self._raw_state.get("ChampionshipPrediction") or {}
+        raw_lc  = self._raw_state.get("LapCount") or {}
+        raw_dl  = self._raw_state.get("DriverList") or {}
+        raw_tr  = self._raw_state.get("TeamRadio") or {}
+        raw_si  = self._raw_state.get("SessionInfo") or {}
 
         return RaceState(
             session_key=self.session_key,
             t_session_s=time.monotonic() - self._t_start,
             leader_lap=leader_lap,
+            total_laps=self._total_laps,
             track_status=self._track_status,
             cars=cars,
             rc_messages=list(self._rc_messages),
             weather=self._weather,
+            driver_list=raw_dl or None,
+            live_timing=raw_td.get("Lines") or None,
+            live_timing_session_part=raw_td.get("SessionPart"),
+            live_timing_app=raw_tad.get("Lines") or None,
+            live_timing_stats=raw_ts.get("Lines") or None,
+            extrapolated_clock=raw_ec or None,
+            championship=raw_cp or None,
+            lap_count=raw_lc or None,
+            team_radio_captures=(raw_tr.get("Captures") or None),
+            session_info=raw_si or None,
         )

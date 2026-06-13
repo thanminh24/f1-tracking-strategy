@@ -80,7 +80,12 @@ def get_session_meta(session_key: str) -> pd.DataFrame:
 
 def get_laps(session_key: str) -> pd.DataFrame:
     return query_df(
-        "SELECT * FROM laps WHERE session_key = ? ORDER BY car_id, lap_number", [session_key]
+        "SELECT car_id, driver_code, team, lap_number, stint, position, lap_time_ms, "
+        "lap_start_ms, sector1_ms AS sector_1_ms, "
+        "sector2_ms AS sector_2_ms, sector3_ms AS sector_3_ms, "
+        "compound, tyre_life, pit_in_ms, pit_out_ms, track_status "
+        "FROM laps WHERE session_key = ? ORDER BY car_id, lap_number",
+        [session_key],
     )
 
 

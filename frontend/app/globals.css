@@ -119,3 +119,30 @@ button, a { -webkit-tap-highlight-color: transparent; }
   border: 2px solid rgba(234, 179, 8, 0.5);
   border-radius: 8px;
 }
+
+/* Position gain/loss flash animations */
+@keyframes flash-green {
+  0%, 100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgba(34, 197, 94, 0.15);
+  }
+}
+
+@keyframes flash-red {
+  0%, 100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgba(225, 6, 0, 0.15);
+  }
+}
+
+.flash-green {
+  animation: flash-green 0.5s ease-in-out;
+}
+
+.flash-red {
+  animation: flash-red 0.5s ease-in-out;
+}

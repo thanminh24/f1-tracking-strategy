@@ -1,10 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { usePredictionStore } from "../lib/prediction-store";
+import { useLiveTelemetryStore } from "../lib/live-telemetry-store";
 import { teamColor } from "../lib/team-colors";
 import { TimingRowExpanded } from "./race/timing-row-expanded";
-import type { CarState } from "../lib/types";
+import { SectorChips } from "./race/sector-chips";
+import { MiniSectorChips } from "./race/mini-sector-chips";
+import { DrsBadge } from "./race/drs-badge";
+import type { CarState, LapRow, LiveTimingDriver } from "../lib/types";
 
 function fmtMs(ms: number | null): string {
   if (ms == null) return "—";
@@ -83,11 +87,22 @@ function CarRow({
   focusedCarId,
   expandedCarId,
   onRowClick,
+  isFastest,
+  laps,
+  liveTiming,
+  drsValue,
+  inDangerZone,
 }: {
   car: CarState;
   focusedCarId: string | null;
   expandedCarId: string | null;
   onRowClick: (carId: string) => void;
+  isFastest: boolean;
+  laps?: LapRow[];
+  liveTiming?: LiveTimingDriver;
+  drsValue?: number;
+  /** True when car is in the qualifying elimination zone */
+  inDangerZone?: boolean;
 }) {
   const color = teamColor(car.team);
   const isOut = car.status === "out" || car.status === "finished";
@@ -96,14 +111,32 @@ function CarRow({
   const isFocused = car.car_id === focusedCarId;
   const isExpanded = car.car_id === expandedCarId;
 
+  // Track position changes and flash on gain/loss
+  const [flashClass, setFlashClass] = useState<"flash-green" | "flash-red" | "">(
+    "",
+  );
+  const prevPositionRef = useRef(car.position);
+
+  useEffect(() => {
+    if (prevPositionRef.current !== car.position) {
+      const gained = car.position < prevPositionRef.current;
+      setFlashClass(gained ? "flash-green" : "flash-red");
+      const timeout = setTimeout(() => setFlashClass(""), 500);
+      prevPositionRef.current = car.position;
+      return () => clearTimeout(timeout);
+    }
+  }, [car.position]);
+
   return (
     <>
       <button
         onClick={() => onRowClick(car.car_id)}
         className={`flex items-center gap-2 px-3 py-1.5 border-b border-f1-border last:border-0 w-full text-left transition-colors ${
-          isFocused ? "border-l-2 bg-f1-panel-hover" : "hover:bg-f1-panel-hover"
-        } ${isOut ? "opacity-40" : ""}`}
-        style={{ borderLeftColor: isFocused ? color : undefined }}
+          isFocused ? "border-l-2 bg-f1-panel-hover" : isFastest ? "border-l-2 hover:bg-f1-panel-hover" : "hover:bg-f1-panel-hover"
+        } ${isOut ? "opacity-40" : liveTiming?.KnockedOut ? "opacity-50" : ""} ${
+          inDangerZone && !liveTiming?.KnockedOut ? "bg-red-900/10" : ""
+        } ${liveTiming?.Cutoff ? "ring-1 ring-inset ring-amber-400/50 animate-pulse" : ""} ${flashClass}`}
+        style={{ borderLeftColor: isFocused ? color : isFastest ? "#A855F7" : undefined }}
       >
         {/* pos */}
         <span className="font-data text-sm w-5 shrink-0 text-f1-text-dim text-right">
@@ -133,6 +166,27 @@ function CarRow({
           {car.tire ? car.tire.age_laps : ""}
         </span>
 
+        {/* FL chip */}
+        {isFastest && (
+          <span className="chip text-[9px] px-1 h-5 bg-purple-900/60 text-purple-400 border border-purple-400/40 shrink-0">
+            FL
+          </span>
+        )}
+
+        {/* Mini-sector chips (live only) */}
+        {liveTiming?.Sectors
+          ? <MiniSectorChips sectors={liveTiming.Sectors} />
+          : laps && <SectorChips laps={laps} carId={car.car_id} />
+        }
+
+        {/* DRS badge (live only) */}
+        {drsValue != null && (
+          <DrsBadge
+            drsValue={drsValue}
+            inPit={liveTiming?.InPit}
+          />
+        )}
+
         {/* RL action chip */}
         <RLActionChip action={carPred?.recommended_action ?? null} />
 
@@ -157,10 +211,17 @@ function CarRow({
   );
 }
 
-export function TimingTower() {
+/** Positions at/below which cars are in the elimination zone */
+const DANGER_THRESHOLD: Record<number, number> = { 1: 16, 2: 11, 3: Infinity };
+
+export function TimingTower({ laps }: { laps?: LapRow[] } = {}) {
   const state = useRaceStateStore((s) => s.state);
   const focusedCarId = useRaceStateStore((s) => s.focusedCarId);
   const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
+  const liveTiming = useRaceStateStore((s) => s.state?.live_timing);
+  const telemetry = useLiveTelemetryStore((s) => s.data);
+  const isLive = useRaceStateStore((s) => s.source) === "live";
+  const sessionPart = useRaceStateStore((s) => s.state?.live_timing_session_part);
   const [expandedCarId, setExpandedCarId] = useState<string | null>(null);
 
   if (!state) {
@@ -170,6 +231,17 @@ export function TimingTower() {
       </div>
     );
   }
+
+  // Compute fastest car from laps
+  const fastestCar =
+    laps && laps.length > 0
+      ? laps.reduce((best, l) => {
+          if (l.lap_time_ms == null) return best;
+          if (best == null || l.lap_time_ms < best.lap_time_ms!) return l;
+          return best;
+        }, null as LapRow | null)
+      : null;
+  const fastestCarId = fastestCar?.car_id ?? null;
 
   const sorted = [...state.cars].sort((a, b) => a.position - b.position);
 
@@ -191,15 +263,26 @@ export function TimingTower() {
         <span className="text-[10px] text-f1-muted flex-1 text-right">GAP</span>
         <span className="text-[10px] text-f1-muted w-16 text-right">LAST LAP</span>
       </div>
-      {sorted.map((car, i) => (
-        <CarRow
-          key={car.car_id}
-          car={car}
-          focusedCarId={focusedCarId}
-          expandedCarId={expandedCarId}
-          onRowClick={handleRowClick}
-        />
-      ))}
+      {sorted.map((car) => {
+        const driverTelemetry = isLive ? telemetry[car.car_id] : undefined;
+        const lastSample = driverTelemetry?.at(-1);
+        const dangerThreshold = sessionPart != null ? DANGER_THRESHOLD[sessionPart] : undefined;
+        const inDangerZone = isLive && dangerThreshold != null && car.position >= dangerThreshold;
+        return (
+          <CarRow
+            key={car.car_id}
+            car={car}
+            focusedCarId={focusedCarId}
+            expandedCarId={expandedCarId}
+            onRowClick={handleRowClick}
+            isFastest={car.car_id === fastestCarId}
+            laps={laps}
+            liveTiming={isLive ? liveTiming?.[car.car_id] : undefined}
+            drsValue={isLive ? lastSample?.drs : undefined}
+            inDangerZone={inDangerZone}
+          />
+        );
+      })}
     </div>
   );
 }

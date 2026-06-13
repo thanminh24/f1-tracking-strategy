@@ -3,20 +3,7 @@
 import { usePredictionStore, isStale } from "../../lib/prediction-store";
 import { useRaceStateStore } from "../../lib/race-state-store";
 import { pct } from "../../lib/prediction-types";
-
-const ACTION_LABELS: Record<string, string> = {
-  STAY: "Stay Out",
-  PIT_SOFT: "Pit — Soft",
-  PIT_MEDIUM: "Pit — Medium",
-  PIT_HARD: "Pit — Hard",
-};
-
-const ACTION_COLORS: Record<string, string> = {
-  STAY: "#22C55E",
-  PIT_SOFT: "#E10600",
-  PIT_MEDIUM: "#FFD700",
-  PIT_HARD: "#EFEFEF",
-};
+import { ACTION_COLORS, actionColor, actionLabel } from "../../lib/prediction-display";
 
 interface Props {
   /** Focus on this car's recommendation. If null, shows race leader. */
@@ -46,15 +33,15 @@ export function ModelCard({ focusCarId }: Props) {
   if (!car) return null;
 
   const action = car.recommended_action ?? "STAY";
-  const color = ACTION_COLORS[action] ?? "#707070";
+  const color = actionColor(action);
   const probs = Object.entries(car.action_probs).sort((a, b) => b[1] - a[1]);
 
   return (
     <div
-      className={`rounded-lg border bg-f1-panel p-4 transition-opacity ${
+      className={`rounded-lg bg-f1-panel p-4 transition-opacity ${
         stale ? "opacity-50" : ""
       }`}
-      style={{ borderColor: color + "60" }}
+      style={{ border: `1px solid ${color}60` }}
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-3">
@@ -74,7 +61,7 @@ export function ModelCard({ focusCarId }: Props) {
 
       {/* Main action */}
       <div className="text-xl font-bold mb-1" style={{ color }}>
-        {ACTION_LABELS[action] ?? action}
+        {actionLabel(action)}
       </div>
 
       {/* Probability breakdown */}
@@ -82,7 +69,7 @@ export function ModelCard({ focusCarId }: Props) {
         {probs.map(([act, p]) => (
           <div key={act} className="flex items-center gap-2">
             <span className="font-data text-xs text-f1-text-dim w-24 shrink-0">
-              {ACTION_LABELS[act] ?? act}
+              {actionLabel(act)}
             </span>
             <div className="flex-1 h-1.5 rounded-full bg-f1-surface overflow-hidden">
               <div

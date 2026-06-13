@@ -1,5 +1,6 @@
 "use client";
 import { useRaceStateStore } from "../lib/race-state-store";
+import { useKeyboardShortcuts } from "../lib/use-keyboard-shortcuts";
 import type { FeederClient } from "../lib/feeder-client";
 
 function fmtTime(s: number): string {
@@ -20,6 +21,37 @@ export function PlaybackControls({ client }: Props) {
   const status = useRaceStateStore((s) => s.status);
   const connected = useRaceStateStore((s) => s.connected);
   const source = useRaceStateStore((s) => s.source);
+
+  // Keyboard shortcuts for playback controls (archive mode only)
+  useKeyboardShortcuts(
+    source === "archive" && status && connected
+      ? {
+          " ": () => client?.control(status.playing ? "pause" : "play"),
+          ArrowRight: () => client?.control("seek", status.t_session_s + 5),
+          ArrowLeft: () => client?.control("seek", Math.max(0, status.t_session_s - 5)),
+          "]": () => {
+            const currentIdx = SPEEDS.indexOf(status.speed);
+            const nextIdx = (currentIdx + 1) % SPEEDS.length;
+            client?.control("speed", SPEEDS[nextIdx]);
+          },
+          "[": () => {
+            const currentIdx = SPEEDS.indexOf(status.speed);
+            const prevIdx = currentIdx === 0 ? SPEEDS.length - 1 : currentIdx - 1;
+            client?.control("speed", SPEEDS[prevIdx]);
+          },
+          "+": () => {
+            const currentIdx = SPEEDS.indexOf(status.speed);
+            const nextIdx = (currentIdx + 1) % SPEEDS.length;
+            client?.control("speed", SPEEDS[nextIdx]);
+          },
+          "-": () => {
+            const currentIdx = SPEEDS.indexOf(status.speed);
+            const prevIdx = currentIdx === 0 ? SPEEDS.length - 1 : currentIdx - 1;
+            client?.control("speed", SPEEDS[prevIdx]);
+          },
+        }
+      : {},
+  );
 
   // Hide for live source — no scrubbing on real-time feed
   if (source === "live") {

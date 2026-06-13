@@ -1,8 +1,13 @@
 """SC hazard math + prediction-service degraded paths (no archive needed)."""
 
 import numpy as np
+import pandas as pd
 
-from f1_strategy.strategy.prediction_service import PredictionService
+from f1_strategy.feeder.livef1_schedule_client import ScheduledSession
+from f1_strategy.strategy.prediction_service import (
+    PredictionService,
+    resolve_prediction_artifact_key,
+)
 from f1_strategy.strategy.sc_hazard import SCHazardModel
 
 
@@ -47,3 +52,33 @@ def test_prediction_service_degrades_for_unknown_session():
     state = RaceState(session_key="2031_99_R", t_session_s=0.0, leader_lap=5, cars=[])
     assert svc.predict(state) is None
     assert not svc.available  # truthful after the load attempt failed
+
+
+def test_prediction_artifact_key_uses_archive_metadata(monkeypatch):
+    monkeypatch.setattr(
+        "f1_strategy.strategy.prediction_service.queries.get_session_meta",
+        lambda _session_key: pd.DataFrame([{"year": 2024, "circuit": "Monaco"}]),
+    )
+
+    assert resolve_prediction_artifact_key("2024_08_R") == (2024, "Monaco")
+
+
+def test_prediction_artifact_key_uses_live_schedule_fallback(monkeypatch):
+    monkeypatch.setattr(
+        "f1_strategy.strategy.prediction_service.queries.get_session_meta",
+        lambda _session_key: pd.DataFrame(columns=["year", "circuit"]),
+    )
+    monkeypatch.setattr(
+        "f1_strategy.feeder.livef1_schedule_client.get_current_session_sync",
+        lambda: ScheduledSession(
+            session_key=1234,
+            circuit="Catalunya",
+            country="Spanish Grand Prix",
+            session_type="Race",
+            date_start=None,
+            date_end=None,
+            status="active",
+        ),
+    )
+
+    assert resolve_prediction_artifact_key("live")[1] == "Catalunya"

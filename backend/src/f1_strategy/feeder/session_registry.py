@@ -46,6 +46,13 @@ class FeederSession:
             async for state in self.feeder.ticks():
                 self._broadcast({"type": "race_state", "data": state.model_dump(mode="json")})
                 self._broadcast({"type": "replay_status", "data": self.feeder.status()})
+                # Broadcast per-driver telemetry when available (LiveF1Feeder only).
+                # Truncate to last 60 samples per driver (~15s at 4Hz) to bound message size.
+                if hasattr(self.feeder, "get_telemetry"):
+                    telem = self.feeder.get_telemetry()
+                    if telem:
+                        trimmed = {k: v[-60:] for k, v in telem.items()}
+                        self._broadcast({"type": "telemetry", "data": trimmed})
                 self._maybe_predict(state)
         except Exception:
             log.exception("feeder pump died: %s", self.feeder.session_key)

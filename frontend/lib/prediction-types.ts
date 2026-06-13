@@ -8,10 +8,25 @@ export interface OutcomeProbs {
   position_dist: Record<string, number>; // position → prob
 }
 
+export interface FeatureImportance {
+  group: string;
+  action: string;
+  probability_delta: number;
+}
+
+export interface ModelRecommendation {
+  recommended_action: string | null;
+  action_probs: Record<string, number>;
+  inference_ms: number;
+  version: string;
+  top_factors: FeatureImportance[]; // top feature drivers; empty when unavailable
+}
+
 export interface CarPrediction {
   car_id: string;
   recommended_action: string | null; // STAY | PIT_SOFT | PIT_MEDIUM | PIT_HARD
   action_probs: Record<string, number>;
+  model_recommendations?: Record<string, ModelRecommendation>;
   pit_window_probs: Record<string, number>; // lap → P(pits that lap)
   next_compound_probs: Record<string, number>;
   outcome: OutcomeProbs;

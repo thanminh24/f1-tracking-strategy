@@ -14,10 +14,22 @@ class OutcomeProbs(BaseModel):
     position_dist: dict[str, float] = Field(default_factory=dict)
 
 
+class ModelRecommendation(BaseModel):
+    recommended_action: str | None = None
+    action_probs: dict[str, float] = Field(default_factory=dict)
+    inference_ms: float = 0.0
+    version: str = "unknown"
+    # Top feature-group drivers for this recommendation (from perturbation importance).
+    # Each entry: {group, action, probability_delta}. Empty when explanation is unavailable.
+    top_factors: list[dict] = Field(default_factory=list)
+
+
 class CarPrediction(BaseModel):
     car_id: str
     recommended_action: str | None = None  # STAY | PIT_SOFT | PIT_MEDIUM | PIT_HARD
     action_probs: dict[str, float] = Field(default_factory=dict)
+    # Optional per-model recommendations for challenger/shadow policies.
+    model_recommendations: dict[str, ModelRecommendation] = Field(default_factory=dict)
     # lap (str keys for JSON) → P(pits that lap), from sampled rival strategies
     pit_window_probs: dict[str, float] = Field(default_factory=dict)
     next_compound_probs: dict[str, float] = Field(default_factory=dict)

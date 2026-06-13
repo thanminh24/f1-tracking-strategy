@@ -8,6 +8,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
+import pandas as pd
 from pydantic import BaseModel
 
 from f1_strategy.archive import queries
@@ -38,12 +39,13 @@ def build_timeline(session_key: str) -> RaceTimeline:
     if laps.empty:
         raise ValueError(f"session not in archive: {session_key}")
     meta = queries.get_session_meta(session_key)
-    total_laps = int(meta["total_laps"].iloc[0]) if not meta.empty else None
+    _tl_raw = meta["total_laps"].iloc[0] if not meta.empty else None
+    total_laps = int(_tl_raw) if _tl_raw is not None and pd.notna(_tl_raw) else None
     results = queries.get_results(session_key)
     finish_positions = {
         str(r["car_id"]): int(r["position"])
         for _, r in results.iterrows()
-        if r["position"] == r["position"]  # NaN-safe
+        if pd.notna(r["position"])
     }
     return RaceTimeline(session_key, laps, total_laps, finish_positions)
 

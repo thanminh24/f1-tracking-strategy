@@ -10,10 +10,14 @@ import type {
   WeatherData,
 } from "./types";
 
-// Empty string → same-origin (nginx routes /api/* and /ws/* to backend).
-// Set NEXT_PUBLIC_API_URL only when running backend on a different host/port.
+// Browser: empty string → same-origin (nginx routes /api/* to backend).
+// SSR (Next.js server components): must use an absolute URL — no browser host available.
+// BACKEND_INTERNAL_URL is the backend reachable from the Next.js Node process.
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "";
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window === "undefined"
+    ? (process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000")
+    : "");
 
 // Browser: derive ws(s):// from current page origin so nginx WebSocket proxy works.
 // Server-side (Next.js RSC): fall back to loopback for prefetch calls.
@@ -48,10 +52,36 @@ export const api = {
       .catch(() => ({ air_temp_c: null, track_temp_c: null, humidity_pct: null, wind_speed_ms: null, wind_direction_deg: null, rainfall: null })),
   trackOutline: (key: string) =>
     getJson<OutlinePoint[]>(`/api/sessions/${key}/track-outline`),
+  circuitOutline: (circuit: string) =>
+    getJson<OutlinePoint[]>(`/api/circuits/${encodeURIComponent(circuit)}/track-outline`),
   telemetry: (key: string, carId: string, lap: number) =>
     getJson<TelemetrySample[]>(`/api/sessions/${key}/telemetry/${carId}/${lap}`),
   teamRadio: (key: string) =>
     getJson<TeamRadioMessage[]>(`/api/sessions/${key}/team-radio`),
+  calendar: (year: number) => getJson<CalendarEvent[]>(`/api/calendar/${year}`),
   liveSession: () =>
     getJson<{ session_key: string | null; openf1_key: number | null; status: string; session_type?: string; circuit?: string; year?: number }>("/api/live/current-session"),
+  schedule: () =>
+    getJson<{ sessions: ScheduleSession[] }>("/api/live/schedule").then((r) => r.sessions),
 };
+
+export interface CalendarEvent {
+  round: number;
+  event_name: string;
+  circuit: string | null;
+  country: string | null;
+  session_types: string[];
+  local: boolean;
+  first_session_utc: string | null;
+}
+
+export interface ScheduleSession {
+  openf1_key: number;
+  year: number | null;
+  circuit: string | null;
+  session_type: string | null;
+  country: string | null;
+  date_start: string | null;
+  date_end: string | null;
+  status: "active" | "upcoming" | "recent";
+}

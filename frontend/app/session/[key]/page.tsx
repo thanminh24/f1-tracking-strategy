@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { api } from "../../../lib/api-client";
 import { SessionDashboard } from "./session-dashboard";
 
@@ -16,6 +18,9 @@ export default async function SessionPage({ params, searchParams }: Props) {
   let source: "archive" | "live" = "archive";
 
   if (sourceParam === "live") {
+    if (key !== "live") {
+      redirect("/session/live?source=live");
+    }
     source = "live";
   } else {
     // Best-effort prefetch — ensure archive data exists; live sessions skip ingestion.
@@ -34,6 +39,7 @@ export default async function SessionPage({ params, searchParams }: Props) {
 
   return (
     <SessionDashboard
+      key={key}
       sessionKey={key}
       initialSource={source}
       laps={laps}

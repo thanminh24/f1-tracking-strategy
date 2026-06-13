@@ -132,8 +132,8 @@ export function TelemetryCompare({ sessionKey, laps }: Props) {
           {traces.map((t) => (
             <div
               key={t.id}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-data"
-              style={{ borderColor: t.color + "60", color: t.color }}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-data"
+              style={{ border: `1px solid ${t.color}60`, color: t.color }}
             >
               {t.label}
               <button
