@@ -76,12 +76,10 @@ def set_source(session_key: str, body: SourceRequest) -> dict:
 async def auto_source(session_key: str) -> dict:
     """Select the best available live source automatically.
 
-    Tries OpenF1 first; falls back to livef1 SignalR if OpenF1 is restricted.
+    Always uses livef1 (SignalR Core) — it works before, during, and after live
+    sessions with no authentication required. OpenF1 is unreliable after sessions end.
     """
-    if await _openf1_available():
-        chosen = "live"
-    else:
-        chosen = "livef1"
+    chosen = "livef1"
     registry.set_source(session_key, chosen)
     log.info("auto source: %s → %s", session_key, chosen)
     return {"session_key": session_key, "source": chosen, "auto": True}

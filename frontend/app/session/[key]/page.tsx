@@ -14,21 +14,20 @@ export default async function SessionPage({ params, searchParams }: Props) {
   const { key } = await params;
   const { source: sourceParam } = await searchParams;
 
-  // Determine source from URL param, or via ensureSession for archive detection.
+  // Determine source from URL param or session key.
   let source: "archive" | "live" = "archive";
 
-  if (sourceParam === "live") {
-    if (key !== "live") {
-      redirect("/session/live?source=live");
-    }
+  if (key === "live" || sourceParam === "live") {
+    // "live" key always routes to the real-time feed — no archive lookup
+    if (key !== "live") redirect("/session/live?source=live");
     source = "live";
   } else {
-    // Best-effort prefetch — ensure archive data exists; live sessions skip ingestion.
+    // Archive session: best-effort prefetch to ensure local data exists.
     try {
       const info = await api.ensureSession(key);
       source = (info.source as "archive" | "live") || "archive";
     } catch {
-      // live session or network error — proceed; dashboard handles fallback
+      // network error — proceed; dashboard handles fallback
     }
   }
 

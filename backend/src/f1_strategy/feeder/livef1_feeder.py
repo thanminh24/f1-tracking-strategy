@@ -82,6 +82,9 @@ class LiveF1Feeder:
         self._rc_msg_count: int = 0
         self._total_laps: int | None = None
         self._finished: bool = False
+        # Guard: ignore "SESSION ENDED/CHEQUERED" in the historical snapshot;
+        # those messages belong to prior sessions and must not terminate this feeder.
+        self._snapshot_processed: bool = False
 
         # Full merged topic state — surfaced as extended live fields in RaceState
         self._raw_state: dict[str, Any] = {}
@@ -136,6 +139,14 @@ class LiveF1Feeder:
                 log.info("LiveF1Feeder: session changed, reconnecting in 3s")
                 await asyncio.sleep(3.0)
 
+        # Session ended — keep streaming last known state so WebSocket stays open
+        # and clients see final standings. Pump is cancelled when last client disconnects.
+        log.info("LiveF1Feeder: session finished, holding final state for %s", self.session_key)
+        while True:
+            if self._state is not None:
+                yield self._state
+            await asyncio.sleep(2.0)
+
     def current_state(self) -> RaceState | None:
         return self._state
 
@@ -186,20 +197,27 @@ class LiveF1Feeder:
                 self._raw_state[topic] = data
             for topic, data in snapshot.items():
                 self._apply_topic(topic, data, is_snapshot=True)
+            self._snapshot_processed = True
 
         elif msg_type == "update":
             topic: str = msg["topic"]
             delta: Any = msg["delta"]
             if topic not in self._raw_state:
-                self._raw_state[topic] = delta if isinstance(delta, dict) else {}
+                # For .z topics the initial delta may be a bare list; store it as-is
+                self._raw_state[topic] = delta if isinstance(delta, (dict, list)) else {}
             else:
                 self._raw_state[topic] = merge(self._raw_state[topic], delta)
             self._apply_topic(topic, self._raw_state[topic], is_snapshot=False)
 
     def _apply_topic(self, topic: str, data: Any, is_snapshot: bool) -> None:  # noqa: ARG002
-        if not isinstance(data, dict):
+        # .z topics arrive as list (bare frame list) on updates but dict on snapshot;
+        # handle both here and bail early only for non-dict other topics
+        if not isinstance(data, (dict, list)):
             return
         try:
+            # Non-.z topics always send dicts; skip list payloads for them
+            if isinstance(data, list) and not topic.endswith(".z"):
+                return
             if topic == "TimingData":
                 for dn, rec in (data.get("Lines") or {}).items():
                     if isinstance(rec, dict):
@@ -351,7 +369,9 @@ class LiveF1Feeder:
         code = str(data.get("Status") or "1")
         self._track_status = _TRACK_STATUS_MAP.get(code, TrackStatus.GREEN)
         msg = str(data.get("Message") or "")
-        if "CHEQUERED" in msg.upper() or "FINISHED" in msg.upper():
+        if self._snapshot_processed and (
+            "CHEQUERED" in msg.upper() or "FINISHED" in msg.upper()
+        ):
             self._finished = True
 
     def _apply_driver(self, dn: str, rec: dict) -> None:
@@ -410,7 +430,10 @@ class LiveF1Feeder:
         if len(self._rc_messages) > 20:
             self._rc_messages = self._rc_messages[-20:]
 
-        if "CHEQUERED" in text_upper or "SESSION ENDED" in text_upper:
+        # Only mark finished from live updates, not from historical snapshot messages
+        if self._snapshot_processed and (
+            "CHEQUERED" in text_upper or "SESSION ENDED" in text_upper
+        ):
             self._finished = True
 
         m = _LAPS_REMAINING_RE.search(text)
@@ -419,11 +442,19 @@ class LiveF1Feeder:
             leader_lap = max(self._laps.values(), default=0)
             self._total_laps = leader_lap + remaining
 
-    def _apply_position_z(self, data: dict) -> None:
-        for frame in (data.get("Position") or []):
+    def _apply_position_z(self, data) -> None:
+        # Snapshot delivers {"Position": [frame, ...]}, update delivers bare [frame, ...]
+        if isinstance(data, dict):
+            frames = data.get("Position") or []
+        elif isinstance(data, list):
+            frames = data
+        else:
+            return
+        for frame in frames:
             if not isinstance(frame, dict):
                 continue
-            for dn, entry in (frame.get("Entries") or {}).items():
+            entries = frame.get("Entries") or {}
+            for dn, entry in entries.items():
                 if not isinstance(entry, dict):
                     continue
                 x, y = entry.get("X"), entry.get("Y")
@@ -433,9 +464,16 @@ class LiveF1Feeder:
                     except (TypeError, ValueError):
                         pass
 
-    def _apply_cardata_z(self, data: dict) -> None:
+    def _apply_cardata_z(self, data) -> None:
+        # Snapshot delivers {"Entries": [frame, ...]}, update delivers bare [frame, ...]
+        if isinstance(data, dict):
+            entries = data.get("Entries") or []
+        elif isinstance(data, list):
+            entries = data
+        else:
+            return
         now = time.monotonic() - self._t_start
-        for frame in (data.get("Entries") or []):
+        for frame in entries:
             if not isinstance(frame, dict):
                 continue
             for dn, car in (frame.get("Cars") or {}).items():

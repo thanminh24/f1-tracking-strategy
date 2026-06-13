@@ -248,12 +248,15 @@ const mvGeoCache = new Map<string, TrackGeo>();
 /**
  * For live sessions pass circuitKey (number from SessionInfo.Meeting.Circuit.Key)
  * and year — the hook will fetch from multiviewer.app.
+ * fallbackCircuit: FastF1 circuit name used when multiviewer has no data or
+ * circuitKey hasn't arrived yet (live sessions only).
  * For archive sessions only sessionKey is needed.
  */
 export function useTrackGeo(
   sessionKey: string,
   circuitKey?: number,
   year?: number,
+  fallbackCircuit?: string,
 ): TrackGeo | null {
   const isLive = sessionKey === "live" || sessionKey.startsWith("live");
   const mvKey = circuitKey != null ? `${circuitKey}:${year ?? new Date().getFullYear()}` : null;
@@ -262,9 +265,12 @@ export function useTrackGeo(
   const [mvGeo, setMvGeo] = useState<TrackGeo | null>(
     () => (mvKey ? mvGeoCache.get(mvKey) ?? null : null),
   );
+  // Track whether multiviewer fetch failed so we can fall back to FastF1
+  const [mvFailed, setMvFailed] = useState(false);
 
   useEffect(() => {
     if (!isLive || circuitKey == null) return;
+    setMvFailed(false);
     const ck = circuitKey;
     const yr = year ?? new Date().getFullYear();
     const key = `${ck}:${yr}`;
@@ -272,37 +278,59 @@ export function useTrackGeo(
     if (cached) { setMvGeo(cached); return; }
     let cancelled = false;
     fetchMultiviewerCircuit(ck, yr).then((data) => {
-      if (cancelled || !data) return;
+      if (cancelled) return;
+      if (!data) { setMvFailed(true); return; }
       const geo = buildGeoFromMultiviewer(data);
       if (geo) {
         mvGeoCache.set(key, geo);
         setMvGeo(geo);
+      } else {
+        setMvFailed(true);
       }
     });
     return () => { cancelled = true; };
   }, [isLive, circuitKey, year]);
 
-  // ── Archive path ──────────────────────────────────────────────────────────
+  // ── Archive / fallback path ───────────────────────────────────────────────
+  // For live sessions: fetch FastF1 outline in parallel with multiviewer when
+  // fallbackCircuit is known — whichever resolves first paints the map.
+  // For archive sessions: always fetch via session/circuit key.
+  const archiveKey = isLive
+    ? (fallbackCircuit ? `circuit:${fallbackCircuit}` : null)
+    : sessionKey;
+  const shouldFetchArchive = isLive ? archiveKey != null : true;
+
   const [points, setPoints] = useState<OutlinePoint[]>(
-    () => (isLive ? [] : (pointsCache.get(sessionKey) ?? [])),
+    () => (!isLive ? (pointsCache.get(sessionKey) ?? []) : []),
   );
 
   useEffect(() => {
-    if (isLive) return;
+    if (!shouldFetchArchive || !archiveKey) return;
     let cancelled = false;
-    const cached = pointsCache.get(sessionKey);
+    const cached = pointsCache.get(archiveKey);
     if (cached) {
       Promise.resolve().then(() => { if (!cancelled) setPoints(cached); });
       return () => { cancelled = true; };
     }
-    fetchPoints(sessionKey)
+    fetchPoints(archiveKey)
       .then((pts) => { if (!cancelled) setPoints(pts); })
       .catch(() => { if (!cancelled) setPoints([]); });
     return () => { cancelled = true; };
-  }, [sessionKey, isLive]);
+  }, [archiveKey, shouldFetchArchive]);
 
   return useMemo(() => {
-    if (isLive) return mvGeo;
+    if (isLive) {
+      // Prefer GPS-accurate multiviewer; fall back to FastF1 outline
+      if (mvGeo) return mvGeo;
+      if (points.length >= 10) {
+        const key = archiveKey ?? sessionKey;
+        const existing = geoCache.get(key);
+        if (existing) return existing;
+        const geo = buildGeo(points);
+        if (geo) { geoCache.set(key, geo); return geo; }
+      }
+      return null;
+    }
 
     if (points.length < 10) return null;
     const existing = geoCache.get(sessionKey);
@@ -311,5 +339,5 @@ export function useTrackGeo(
     if (!geo) return null;
     geoCache.set(sessionKey, geo);
     return geo;
-  }, [isLive, mvGeo, points, sessionKey]);
+  }, [isLive, mvGeo, mvFailed, points, sessionKey, archiveKey]);
 }

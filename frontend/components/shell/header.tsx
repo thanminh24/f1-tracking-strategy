@@ -102,7 +102,7 @@ export function Header({ sessionLabel, sessionKey, sourceMode }: HeaderProps) {
   };
 
   return (
-    <header className="flex items-center gap-4 px-4 h-12 border-b border-f1-border bg-f1-surface shrink-0">
+    <header className="flex items-center gap-4 px-4 h-14 border-b border-f1-border bg-f1-surface shrink-0">
       {/* Brand — always links home */}
       <Link href="/" className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
         <F1Logo className="h-5 w-auto" />

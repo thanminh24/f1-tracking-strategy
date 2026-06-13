@@ -152,32 +152,58 @@ function drawFrame(
 export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const state = useRaceStateStore((s) => s.state);
   const isLive = sessionKey === "live";
-  // Live sessions: prefer multiviewer API via circuitKey.
-  // Fallback: old circuit-name-based endpoint for archive sessions.
-  const geoKey = !isLive && circuit ? `circuit:${circuit}` : sessionKey;
-  const geo = useTrackGeo(geoKey, isLive ? circuitKey : undefined, sessionYear);
-  const focusedCarId = useRaceStateStore((s) => s.focusedCarId);
-  const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
-  const [showDrs, setShowDrs] = useState(true);
-  // Version counter incremented on resize so the draw effect re-fires after canvas reset.
-  const [sizeVersion, setSizeVersion] = useState(0);
+  // For live sessions: always pass "live" key + circuitKey to useTrackGeo.
+  // The hook tries multiviewer first; if unavailable it falls back to the FastF1
+  // circuit outline via `fallbackCircuit` — so the map always shows something.
+  const geoKey = isLive ? "live" : (circuit ? `circuit:${circuit}` : sessionKey);
+  const geo = useTrackGeo(
+    geoKey,
+    isLive ? circuitKey : undefined,
+    sessionYear,
+    isLive ? circuit : undefined,  // fallbackCircuit: FastF1 outline when multiviewer missing
+  );
 
-  // SC status from authoritative track_status field.
-  const scActive = state?.track_status === "sc" || state?.track_status === "vsc";
+  // Refs for rAF loop — no React re-render needed for drawing
+  const geoRef = useRef(geo);
+  const lastValidGeoRef = useRef(geo);  // keep last non-null geo to avoid blank on source switch
+  const stateRef = useRef(useRaceStateStore.getState().state);
+  const focusedCarIdRef = useRef(useRaceStateStore.getState().focusedCarId);
+  const showDrsRef = useRef(true);
+  const dprRef = useRef(typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  if (geo !== null) lastValidGeoRef.current = geo;
+  geoRef.current = geo ?? lastValidGeoRef.current;
+
+  const [showDrs, setShowDrs] = useState(true);
+  showDrsRef.current = showDrs;
+
+  const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
+
+  // Derive SC status for CSS overlay (needs React render)
+  const scActive = useRaceStateStore(
+    (s) => s.state?.track_status === "sc" || s.state?.track_status === "vsc"
+  );
+
+  // Subscribe to store changes without causing re-renders
+  useEffect(() => {
+    return useRaceStateStore.subscribe((s) => {
+      stateRef.current = s.state;
+      focusedCarIdRef.current = s.focusedCarId;
+    });
+  }, []);
 
   // Handle canvas click for driver selection
   const handleCanvasClick = (evt: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
+    const state = stateRef.current;
+    const geo = geoRef.current;
     if (!canvas || !state) return;
 
     const rect = canvas.getBoundingClientRect();
     const clickX = evt.clientX - rect.left;
     const clickY = evt.clientY - rect.top;
 
-    // Find nearest car within 20px using simple distance
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const dpr = dprRef.current;
     const scale = Math.min(canvas.width / dpr, canvas.height / dpr) / 1000;
     const offX = (canvas.width / dpr - 1000 * scale) / 2;
     const offY = (canvas.height / dpr - 1000 * scale) / 2;
@@ -206,9 +232,7 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
       }
     }
 
-    if (nearest) {
-      setFocusedCarId(nearest);
-    }
+    if (nearest) setFocusedCarId(nearest);
   };
 
   // DPI-aware canvas sizing with ResizeObserver
@@ -218,22 +242,16 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
     if (!canvas || !container) return;
 
     const updateCanvasSize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      dprRef.current = dpr;
       const rect = container.getBoundingClientRect();
-      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      const ctx = canvas.getContext("2d");
-      if (ctx) ctx.scale(dpr, dpr);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
     };
 
     updateCanvasSize();
-    const observer = new ResizeObserver(() => {
-      updateCanvasSize();
-      // Bump version so the draw effect re-fires after canvas context reset.
-      setSizeVersion((v) => v + 1);
-    });
+    const observer = new ResizeObserver(updateCanvasSize);
     observer.observe(container);
-
     return () => observer.disconnect();
   }, []);
 
@@ -246,22 +264,32 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
     fetch(url, { priority: "low" }).catch(() => {});
   }, [sessionKey, circuit]);
 
-  // Draw frame on state/geo changes
+  // rAF draw loop — reads from refs, never re-subscribes
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Get logical size (after DPI scaling)
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const logicalWidth = canvas.width / dpr;
-    const logicalHeight = canvas.height / dpr;
-
-    // Create temp canvas for logical coords
-    const tempCanvas = { width: logicalWidth, height: logicalHeight };
-    drawFrame(ctx, tempCanvas, geo, state, focusedCarId, circuit, showDrs);
-  }, [state, geo, focusedCarId, circuit, showDrs, sizeVersion]);
+    let rafId: number;
+    const loop = () => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        const dpr = dprRef.current;
+        if (ctx) {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          drawFrame(
+            ctx,
+            { width: canvas.width / dpr, height: canvas.height / dpr },
+            geoRef.current,
+            stateRef.current,
+            focusedCarIdRef.current,
+            circuit,
+            showDrsRef.current,
+          );
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [circuit]); // only re-mount when circuit identity changes
 
   return (
     <div

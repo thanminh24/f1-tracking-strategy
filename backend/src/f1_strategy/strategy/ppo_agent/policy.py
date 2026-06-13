@@ -25,7 +25,15 @@ def _load_model(season: int, circuit: str):
     # Path check BEFORE the SB3/torch import: absent checkpoints must not pay the
     # multi-second torch import. NOTE: a None result is cached — training a new
     # checkpoint requires a server restart to be picked up.
-    path = get_settings().models_dir / f"ppo_{season}_{circuit}.zip"
+    # Fall back to the latest available season for the same circuit when the
+    # exact (season, circuit) zip is absent (e.g. 2026 race, only 2024 model trained).
+    models_dir = get_settings().models_dir
+    path = models_dir / f"ppo_{season}_{circuit}.zip"
+    if not path.exists() and season != 2024:
+        fallback = models_dir / f"ppo_2024_{circuit}.zip"
+        if fallback.exists():
+            log.info("PPO: no model for %s %s, falling back to 2024", season, circuit)
+            path = fallback
     if not path.exists():
         return None
     from stable_baselines3 import PPO  # deferred heavy import

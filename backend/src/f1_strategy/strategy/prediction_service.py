@@ -184,8 +184,16 @@ def _empty_outcome():
 
 
 def _load_rsrl_policy(season: int, circuit: str) -> RSRLPolicy | None:
-    if os.environ.get("F1_RSRL_SHADOW") != "1":
+    if os.environ.get("F1_RSRL_SHADOW") == "0":
         return None
     from f1_strategy.config import get_settings
 
-    return RSRLPolicy(get_settings().models_dir / f"rsrl_{season}_{circuit}.pt")
+    models_dir = get_settings().models_dir
+    # Try exact season first, then fall back to any available RSRL for same circuit
+    for try_season in (season, 2025, 2024):
+        path = models_dir / f"rsrl_{try_season}_{circuit}.pt"
+        if path.exists():
+            if try_season != season:
+                log.info("RSRL: no model for %s %s, using %s", season, circuit, try_season)
+            return RSRLPolicy(path)
+    return None

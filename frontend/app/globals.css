@@ -43,7 +43,7 @@ html, body, #__next {
   color: var(--f1-text);
   /* System stack — no external font dependencies */
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -145,4 +145,19 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .flash-red {
   animation: flash-red 0.5s ease-in-out;
+}
+
+/* Panel drag handle — replaces the border between resizable panels */
+.drag-handle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background-color: var(--f1-border);
+  transition: background-color 0.15s;
+  user-select: none;
+  touch-action: none;
+}
+.drag-handle:hover,
+.drag-handle[data-dragging] {
+  background-color: rgba(59, 130, 246, 0.5);
 }
