@@ -34,6 +34,12 @@ export interface TrackGeo {
   supportsRawLiveProjection: boolean;
   /** Total arc length in viewbox units */
   totalLen: number;
+  /**
+   * SVG viewBox string matching the actual bounding box of norm points.
+   * Use as <svg viewBox={geo.svgViewBox}> to get the track's natural aspect ratio
+   * instead of forcing a square 0 0 1000 1000 box.
+   */
+  svgViewBox: string;
   /** Corner labels (multiviewer only, undefined for archive) */
   corners?: Corner[];
   /** Marshal sector positions for yellow-flag coloring (multiviewer only) */
@@ -42,6 +48,17 @@ export interface TrackGeo {
 
 const VIEWBOX = 1000;
 const PAD = 30;
+
+/** Build an SVG viewBox string from norm points with an extra margin. */
+function computeSvgViewBox(norm: Array<{ x: number; y: number }>, margin = 20): string {
+  const xs = norm.map((p) => p.x);
+  const ys = norm.map((p) => p.y);
+  const x0 = Math.min(...xs) - margin;
+  const y0 = Math.min(...ys) - margin;
+  const w = Math.max(...xs) - Math.min(...xs) + margin * 2;
+  const h = Math.max(...ys) - Math.min(...ys) + margin * 2;
+  return `${x0.toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`;
+}
 
 // ── Archive path (FastF1 backend proxy) ──────────────────────────────────────
 
@@ -194,6 +211,7 @@ function buildGeoFromMultiviewer(data: MultiviewerData): TrackGeo | null {
 
   return {
     d, norm, at, projectRaw, supportsRawLiveProjection: true, totalLen,
+    svgViewBox: computeSvgViewBox(norm),
     corners: transformedCorners,
     marshalSectors: transformedSectors,
   };
@@ -237,7 +255,7 @@ function buildGeo(points: OutlinePoint[]): TrackGeo | null {
   };
 
   const d = `M ${norm.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")} Z`;
-  return { d, norm, at, projectRaw, supportsRawLiveProjection: false, totalLen };
+  return { d, norm, at, projectRaw, supportsRawLiveProjection: false, totalLen, svgViewBox: computeSvgViewBox(norm) };
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
