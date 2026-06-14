@@ -11,6 +11,7 @@ import time
 from datetime import UTC, datetime
 
 from f1_strategy.archive import queries
+from f1_strategy.config import get_settings
 from f1_strategy.models import RaceState
 from f1_strategy.sim.params import SimParams
 from f1_strategy.strategy.behavior_model import BehaviorModel
@@ -35,6 +36,38 @@ def _mc_budget() -> tuple[int, int]:
     return draws, max(1, n // draws)
 
 
+_CIRCUIT_ALIASES: dict[str, tuple[str, ...]] = {
+    "Catalunya": ("Barcelona",),
+    "Barcelona": ("Catalunya",),
+}
+
+
+def _candidate_circuit_names(circuit: str) -> list[str]:
+    names = [circuit]
+    names.extend(_CIRCUIT_ALIASES.get(circuit, ()))
+    seen: set[str] = set()
+    return [name for name in names if name and not (name in seen or seen.add(name))]
+
+
+def _latest_available_calibration(season: int, circuit: str) -> tuple[int, str] | None:
+    calibration_dir = get_settings().calibration_dir
+    candidates: list[tuple[int, str]] = []
+    for name in _candidate_circuit_names(circuit):
+        for path in calibration_dir.glob(f"*/{name}.json"):
+            try:
+                artifact_season = int(path.parent.name)
+            except ValueError:
+                continue
+            candidates.append((artifact_season, name))
+
+    if not candidates:
+        return None
+
+    past_or_current = [item for item in candidates if item[0] <= season]
+    pool = past_or_current or candidates
+    return max(pool, key=lambda item: item[0])
+
+
 def resolve_prediction_artifact_key(session_key: str) -> tuple[int, str]:
     """Return (season, circuit) used to load calibration/model artifacts."""
     meta = queries.get_session_meta(session_key)
@@ -50,7 +83,16 @@ def resolve_prediction_artifact_key(session_key: str) -> tuple[int, str]:
 
         session = get_current_session_sync()
         if session and session.circuit:
-            return datetime.now(UTC).year, session.circuit
+            season = datetime.now(UTC).year
+            fallback = _latest_available_calibration(season, session.circuit)
+            if fallback is not None:
+                if fallback != (season, session.circuit):
+                    log.info(
+                        "live prediction artifacts: using %s %s for %s %s",
+                        fallback[0], fallback[1], season, session.circuit,
+                    )
+                return fallback
+            return season, session.circuit
 
     raise FileNotFoundError(f"no session metadata for {session_key}")
 

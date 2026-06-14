@@ -32,6 +32,27 @@ interface RaceStateStore {
   reset: () => void;
 }
 
+function raceControlKey(msg: RaceControlMessage): string {
+  return `${msg.lap ?? ""}:${msg.category}:${msg.message}`;
+}
+
+function mergeRaceControlMessages(
+  existing: RaceControlMessage[],
+  incoming: RaceControlMessage[] | undefined,
+): RaceControlMessage[] {
+  if (!incoming?.length) return existing;
+  const seen = new Set<string>();
+  const newestIncoming = [...incoming].reverse();
+  return [...newestIncoming, ...existing]
+    .filter((msg) => {
+      const key = raceControlKey(msg);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 10);
+}
+
 export const useRaceStateStore = create<RaceStateStore>((set) => ({
   state: null,
   status: null,
@@ -43,11 +64,15 @@ export const useRaceStateStore = create<RaceStateStore>((set) => ({
   extrapolatedClock: null,
   sessionInfo: null,
   setState: (state) =>
-    set({
+    set((current) => ({
       state,
       extrapolatedClock: state.extrapolated_clock ?? null,
       sessionInfo: state.session_info ?? null,
-    }),
+      raceControlMessages: mergeRaceControlMessages(
+        current.raceControlMessages,
+        state.rc_messages,
+      ),
+    })),
   setStatus: (status) => set({ status }),
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),

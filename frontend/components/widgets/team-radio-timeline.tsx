@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api-client";
+import { useRaceStateStore } from "../../lib/race-state-store";
 import { TeamRadioMessage } from "../../lib/types";
 
 interface Props {
@@ -39,8 +40,40 @@ export function TeamRadioTimeline({ sessionKey }: Props) {
   const [messages, setMessages] = useState<TeamRadioMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const source = useRaceStateStore((s) => s.source);
+  const liveCaptures = useRaceStateStore((s) => s.state?.team_radio_captures);
+  const driverList = useRaceStateStore((s) => s.state?.driver_list);
+  const sessionInfo = useRaceStateStore((s) => s.state?.session_info);
+  const isLive = source === "live" || sessionKey === "live";
+
+  const liveMessages = useMemo<TeamRadioMessage[]>(() => {
+    if (!isLive || !liveCaptures?.length) return [];
+    return liveCaptures
+      .slice(-200)
+      .reverse()
+      .map((capture) => {
+        const driver = driverList?.[capture.RacingNumber];
+        const code = driver?.Tla ?? capture.RacingNumber;
+        const sessionPath = sessionInfo?.Path ?? "";
+        const audioUrl = capture.Path.startsWith("http")
+          ? capture.Path
+          : `https://livetiming.formula1.com/static/${sessionPath}${capture.Path}`;
+        return {
+          lap: 0,
+          t_session_s: Date.parse(capture.Utc) || 0,
+          driver_code: code,
+          msg: null,
+          audio_url: audioUrl,
+        };
+      });
+  }, [driverList, isLive, liveCaptures, sessionInfo]);
 
   useEffect(() => {
+    if (isLive) {
+      setLoading(false);
+      setError(false);
+      return;
+    }
     let cancelled = false;
     Promise.resolve()
       .then(() => {
@@ -63,26 +96,30 @@ export function TeamRadioTimeline({ sessionKey }: Props) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [sessionKey]);
+  }, [isLive, sessionKey]);
+
+  const visibleMessages = isLive ? liveMessages : messages;
 
   return (
     <div className="flex flex-col gap-2 p-2 text-xs">
       {loading && <div className="text-f1-muted text-center py-2">Loading team radio...</div>}
       {error && <div className="text-red-500 text-center py-2">Failed to load team radio</div>}
 
-      {!loading && !error && messages.length === 0 && (
+      {!loading && !error && visibleMessages.length === 0 && (
         <div className="text-f1-muted text-center py-2">No team radio messages</div>
       )}
 
-      {!loading && !error && messages.length > 0 && (
+      {!loading && !error && visibleMessages.length > 0 && (
         <div className="max-h-48 overflow-y-auto scrollbar-thin flex flex-col gap-1">
-          {messages.map((msg, idx) => (
+          {visibleMessages.map((msg, idx) => (
             <div
               key={idx}
               className="flex items-start gap-2 p-1.5 bg-f1-surface/50 border border-f1-border rounded text-xs"
             >
               {/* Lap badge */}
-              <div className="text-f1-muted whitespace-nowrap">LAP {msg.lap}</div>
+              <div className="text-f1-muted whitespace-nowrap">
+                {isLive ? "LIVE" : `LAP ${msg.lap}`}
+              </div>
 
               {/* Driver code (colored) */}
               <div

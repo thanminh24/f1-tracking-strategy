@@ -148,6 +148,7 @@ export interface RaceState {
   total_laps: number | null;
   track_status: TrackStatus;
   cars: CarState[];
+  rc_messages?: RaceControlMessage[];
   // Live-only extended fields (undefined for archive sessions)
   driver_list?: Record<string, LiveDriver>;
   live_timing?: Record<string, LiveTimingDriver>;
@@ -170,7 +171,7 @@ export interface ReplayStatus {
 }
 
 export interface RaceControlMessage {
-  lap: number;
+  lap: number | null;
   t_session_s: number;
   message: string;
   category: string; // "SafetyCar" | "Flag" | "DRS" | "Other"

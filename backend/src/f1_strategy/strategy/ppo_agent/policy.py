@@ -29,16 +29,18 @@ def _load_model(season: int, circuit: str):
     # exact (season, circuit) zip is absent (e.g. 2026 race, only 2024 model trained).
     models_dir = get_settings().models_dir
     path = models_dir / f"ppo_{season}_{circuit}.zip"
+    artifact_season = season
     if not path.exists() and season != 2024:
         fallback = models_dir / f"ppo_2024_{circuit}.zip"
         if fallback.exists():
             log.info("PPO: no model for %s %s, falling back to 2024", season, circuit)
             path = fallback
+            artifact_season = 2024
     if not path.exists():
         return None
     from stable_baselines3 import PPO  # deferred heavy import
 
-    return PPO.load(str(path), device="auto")
+    return PPO.load(str(path), device="auto"), artifact_season
 
 
 def build_obs(state: RaceState, params: SimParams) -> tuple[list[str], np.ndarray]:
@@ -73,8 +75,10 @@ class PPOPolicy:
     """None-safe wrapper: absent checkpoint → recommendations omitted, never errors."""
 
     def __init__(self, season: int, circuit: str):
-        self.model = _load_model(season, circuit)
-        self.version = f"ppo_{season}_{circuit}" if self.model else "none"
+        loaded = _load_model(season, circuit)
+        self.model = loaded[0] if loaded else None
+        artifact_season = loaded[1] if loaded else season
+        self.version = f"ppo_{artifact_season}_{circuit}" if self.model else "none"
 
     @property
     def available(self) -> bool:

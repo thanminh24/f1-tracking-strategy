@@ -30,6 +30,8 @@ export interface TrackGeo {
   at: (frac: number) => { x: number; y: number };
   /** Project raw F1 Cartesian coordinates to the same viewbox space as norm */
   projectRaw: (rawX: number, rawY: number) => { x: number; y: number };
+  /** True only when raw live Position.z coordinates share this geometry. */
+  supportsRawLiveProjection: boolean;
   /** Total arc length in viewbox units */
   totalLen: number;
   /** Corner labels (multiviewer only, undefined for archive) */
@@ -191,7 +193,7 @@ function buildGeoFromMultiviewer(data: MultiviewerData): TrackGeo | null {
   });
 
   return {
-    d, norm, at, projectRaw, totalLen,
+    d, norm, at, projectRaw, supportsRawLiveProjection: true, totalLen,
     corners: transformedCorners,
     marshalSectors: transformedSectors,
   };
@@ -235,7 +237,7 @@ function buildGeo(points: OutlinePoint[]): TrackGeo | null {
   };
 
   const d = `M ${norm.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")} Z`;
-  return { d, norm, at, projectRaw, totalLen };
+  return { d, norm, at, projectRaw, supportsRawLiveProjection: false, totalLen };
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
@@ -262,9 +264,14 @@ export function useTrackGeo(
   const mvKey = circuitKey != null ? `${circuitKey}:${year ?? new Date().getFullYear()}` : null;
 
   // ── Multiviewer path ──────────────────────────────────────────────────────
-  const [mvGeo, setMvGeo] = useState<TrackGeo | null>(
-    () => (mvKey ? mvGeoCache.get(mvKey) ?? null : null),
+  const [mvGeoState, setMvGeoState] = useState<{ key: string; geo: TrackGeo } | null>(
+    () => {
+      if (!mvKey) return null;
+      const geo = mvGeoCache.get(mvKey);
+      return geo ? { key: mvKey, geo } : null;
+    },
   );
+  const mvGeo = mvGeoState?.key === mvKey ? mvGeoState.geo : null;
   // Track whether multiviewer fetch failed so we can fall back to FastF1
   const [mvFailed, setMvFailed] = useState(false);
 
@@ -275,7 +282,8 @@ export function useTrackGeo(
     const yr = year ?? new Date().getFullYear();
     const key = `${ck}:${yr}`;
     const cached = mvGeoCache.get(key);
-    if (cached) { setMvGeo(cached); return; }
+    if (cached) { setMvGeoState({ key, geo: cached }); return; }
+    setMvGeoState(null);
     let cancelled = false;
     fetchMultiviewerCircuit(ck, yr).then((data) => {
       if (cancelled) return;
@@ -283,7 +291,7 @@ export function useTrackGeo(
       const geo = buildGeoFromMultiviewer(data);
       if (geo) {
         mvGeoCache.set(key, geo);
-        setMvGeo(geo);
+        setMvGeoState({ key, geo });
       } else {
         setMvFailed(true);
       }

@@ -81,4 +81,35 @@ def test_prediction_artifact_key_uses_live_schedule_fallback(monkeypatch):
         ),
     )
 
-    assert resolve_prediction_artifact_key("live")[1] == "Catalunya"
+    assert resolve_prediction_artifact_key("live") == (2025, "Barcelona")
+
+
+def test_prediction_artifact_key_uses_latest_same_circuit_live_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv("F1_DATA_DIR", str(tmp_path))
+    from f1_strategy.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        artifact = tmp_path / "calibration" / "2025" / "Barcelona.json"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("{}")
+        monkeypatch.setattr(
+            "f1_strategy.strategy.prediction_service.queries.get_session_meta",
+            lambda _session_key: pd.DataFrame(columns=["year", "circuit"]),
+        )
+        monkeypatch.setattr(
+            "f1_strategy.feeder.livef1_schedule_client.get_current_session_sync",
+            lambda: ScheduledSession(
+                session_key=11307,
+                circuit="Catalunya",
+                country="Spanish Grand Prix",
+                session_type="Race",
+                date_start=None,
+                date_end=None,
+                status="active",
+            ),
+        )
+
+        assert resolve_prediction_artifact_key("live") == (2025, "Barcelona")
+    finally:
+        get_settings.cache_clear()

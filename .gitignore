@@ -30,3 +30,6 @@ logs/
 
 # Frontend build info
 frontend/next-env.d.ts
+
+# Vendored f1-dash source (reference only, not pushed)
+f1-dash-4.0.6/

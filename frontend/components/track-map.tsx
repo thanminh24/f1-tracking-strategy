@@ -106,7 +106,7 @@ function drawFrame(
     if (car.status === "out") continue;
 
     // Use real GPS coords when available (live mode), else arc-length fraction
-    const pt = (car.x != null && car.y != null)
+    const pt = (car.x != null && car.y != null && geo.supportsRawLiveProjection)
       ? geo.projectRaw(car.x, car.y)
       : geo.at(car.lap_fraction);
     const c = toCanvas(pt.x, pt.y);
@@ -218,7 +218,7 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
 
     for (const car of state.cars) {
       if (car.status === "out") continue;
-      const pt = (car.x != null && car.y != null && geo)
+      const pt = (car.x != null && car.y != null && geo?.supportsRawLiveProjection)
         ? geo.projectRaw(car.x, car.y)
         : geo?.at(car.lap_fraction);
       if (!pt) continue;

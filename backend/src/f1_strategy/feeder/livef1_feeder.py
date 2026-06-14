@@ -72,6 +72,7 @@ class LiveF1Feeder:
         self._was_in_pit: dict[str, bool] = {}
         self._driver_codes: dict[str, str] = {}
         self._driver_teams: dict[str, str] = {}
+        self._timing_driver_state: dict[str, dict] = {}
         self._positions_xy: dict[str, tuple[float, float]] = {}
         self._telemetry: dict[str, deque] = defaultdict(lambda: deque(maxlen=300))
 
@@ -294,6 +295,8 @@ class LiveF1Feeder:
         return v
 
     def _apply_timing_driver(self, dn: str, rec: dict) -> None:
+        self._timing_driver_state[dn] = rec
+
         pos = rec.get("Position")
         if pos is not None:
             try:
@@ -339,6 +342,57 @@ class LiveF1Feeder:
             if in_pit_now and not was:
                 self._pit_stops[dn] = self._pit_stops.get(dn, 0) + 1
             self._was_in_pit[dn] = in_pit_now
+
+    @staticmethod
+    def _ordered_values(value: object) -> list:
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, dict):
+            return []
+
+        def _key(item: tuple[object, object]) -> tuple[int, str]:
+            try:
+                return (0, f"{int(item[0]):08d}")
+            except (TypeError, ValueError):
+                return (1, str(item[0]))
+
+        return [v for _, v in sorted(value.items(), key=_key)]
+
+    @classmethod
+    def _estimate_lap_fraction(cls, timing_rec: dict | None) -> float:
+        """Approximate live lap progress from mini-sector status when GPS is unavailable."""
+        if not isinstance(timing_rec, dict):
+            return 0.0
+
+        segments: list[dict] = []
+        for sector in cls._ordered_values(timing_rec.get("Sectors")):
+            if not isinstance(sector, dict):
+                continue
+            segments.extend(
+                s for s in cls._ordered_values(sector.get("Segments")) if isinstance(s, dict)
+            )
+
+        if not segments:
+            return 0.0
+
+        furthest_idx = -1
+        furthest_status = 0
+        for idx in range(len(segments) - 1, -1, -1):
+            try:
+                status = int(segments[idx].get("Status") or 0)
+            except (TypeError, ValueError):
+                status = 0
+            if status > 0:
+                furthest_idx = idx
+                furthest_status = status
+                break
+
+        if furthest_idx < 0:
+            return 0.0
+
+        segment_width = 1.0 / len(segments)
+        offset = 0.5 if furthest_status == 1 else 1.0
+        return min(max((furthest_idx + offset) * segment_width, 0.0), 0.999)
 
     def _apply_tyre_driver(self, dn: str, rec: dict) -> None:
         stints = rec.get("Stints") or {}
@@ -527,13 +581,14 @@ class LiveF1Feeder:
                 stint=self._tyre_stints.get(dn, 1),
             )
             xy = self._positions_xy.get(dn)
+            lap_fraction = self._estimate_lap_fraction(self._timing_driver_state.get(dn))
             cars.append(CarState(
                 car_id=dn,
                 driver_code=self._driver_codes.get(dn),
                 team=self._driver_teams.get(dn),
                 position=self._positions.get(dn, 0),
                 lap=self._laps.get(dn, 0),
-                lap_fraction=0.0,
+                lap_fraction=lap_fraction,
                 gap_leader_s=self._gap_to_seconds(self._gaps.get(dn, "")),
                 interval_s=self._gap_to_seconds(self._intervals.get(dn, "")),
                 last_lap_ms=self._last_laps.get(dn),

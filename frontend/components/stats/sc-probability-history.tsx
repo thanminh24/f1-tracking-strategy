@@ -19,7 +19,11 @@ export function ScProbabilityHistory() {
     // SC deployment laps from race control messages
     const scLaps = new Set<number>();
     for (const msg of raceControlMessages) {
-      if (msg.category === "SafetyCar" && msg.message.includes("deployed")) {
+      if (
+        msg.lap != null &&
+        msg.category === "SafetyCar" &&
+        msg.message.toLowerCase().includes("deployed")
+      ) {
         scLaps.add(msg.lap);
       }
     }

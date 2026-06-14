@@ -10,7 +10,7 @@ priority: P0
 branch: main
 tags: [live, signalr, telemetry, track-map, f1-dash]
 blockedBy: []
-blocks: []
+blocks: [260614-0005-live-position-and-parity-fix]
 created: "2026-06-13"
 research: "plans/reports/researcher-260613-1854-f1-dash-signalr-core-live-data-report.md"
 ---
