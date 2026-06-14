@@ -6,6 +6,15 @@ import { useTrackGeo } from "../lib/use-track-geo";
 import { DRS_ZONES, normalizeDrsCircuit } from "../lib/drs-zones";
 import { drawDrsZones } from "../lib/draw-drs-zones";
 
+/** Lerp factor per rAF frame (~60 Hz). 0.15 → ~200 ms smooth catch-up. */
+const LERP_ALPHA = 0.15;
+
+interface SmoothPos {
+  x: number | null;
+  y: number | null;
+  lapFraction: number;
+}
+
 interface Props {
   sessionKey: string;
   circuit?: string;
@@ -39,6 +48,7 @@ function drawFrame(
   canvas: { width: number; height: number },
   geo: ReturnType<typeof useTrackGeo>,
   state: ReturnType<typeof useRaceStateStore.getState>["state"],
+  smoothPos: Map<string, SmoothPos>,
   focusedCarId: string | null,
   circuit: string | undefined,
   showDrs: boolean
@@ -101,14 +111,39 @@ function drawFrame(
   }
 
   // Driver dots with team-color halos
-  const sorted = [...state.cars].sort((a, b) => a.position - b.position);
-  for (const car of sorted) {
-    if (car.status === "out") continue;
+  // Filter out DNS/DNF/OUT cars entirely, then sort by position
+  const sorted = state.cars
+    .filter((car) => car.status !== "out")
+    .sort((a, b) => a.position - b.position);
 
-    // Use real GPS coords when available (live mode), else arc-length fraction
-    const pt = (car.x != null && car.y != null && geo.supportsRawLiveProjection)
-      ? geo.projectRaw(car.x, car.y)
-      : geo.at(car.lap_fraction);
+  for (const car of sorted) {
+    // Lerp toward the car's current state position
+    const prev = smoothPos.get(car.car_id);
+    const targetX = car.x ?? null;
+    const targetY = car.y ?? null;
+    const targetFrac = car.lap_fraction;
+
+    let sp: SmoothPos;
+    if (!prev) {
+      // First time we see this car — snap to exact position
+      sp = { x: targetX, y: targetY, lapFraction: targetFrac };
+    } else {
+      // Lerp GPS coords when both prev and target have raw values
+      const canLerpRaw =
+        prev.x !== null && targetX !== null &&
+        prev.y !== null && targetY !== null;
+      sp = {
+        x: canLerpRaw ? prev.x! + (targetX! - prev.x!) * LERP_ALPHA : targetX,
+        y: canLerpRaw ? prev.y! + (targetY! - prev.y!) * LERP_ALPHA : targetY,
+        lapFraction: prev.lapFraction + (targetFrac - prev.lapFraction) * LERP_ALPHA,
+      };
+    }
+    smoothPos.set(car.car_id, sp);
+
+    // Use smoothed GPS coords when available (live mode), else arc-length fraction
+    const pt = (sp.x !== null && sp.y !== null && geo.supportsRawLiveProjection)
+      ? geo.projectRaw(sp.x, sp.y)
+      : geo.at(sp.lapFraction);
     const c = toCanvas(pt.x, pt.y);
     const color = teamColor(car.team);
     const isFocused = focusedCarId === car.car_id;
@@ -123,9 +158,8 @@ function drawFrame(
     }
 
     // Team-color halo (outer, 40% opacity)
-    const haloRadius = isFocused ? 9 * scale : 9 * scale;
     ctx.beginPath();
-    ctx.arc(c.x, c.y, haloRadius, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, 9 * scale, 0, Math.PI * 2);
     ctx.fillStyle = color + "66"; // 40% opacity
     ctx.fill();
 
@@ -146,6 +180,12 @@ function drawFrame(
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.fillText(label, c.x, c.y - dotRadius - 1 * scale);
+  }
+
+  // Remove smoothPos entries for cars no longer in state (retired mid-session)
+  const activeIds = new Set(sorted.map((c) => c.car_id));
+  for (const id of smoothPos.keys()) {
+    if (!activeIds.has(id)) smoothPos.delete(id);
   }
 }
 
@@ -171,6 +211,8 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
   const focusedCarIdRef = useRef(useRaceStateStore.getState().focusedCarId);
   const showDrsRef = useRef(true);
   const dprRef = useRef(typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  // Persistent lerp state for smooth position animation — mutated by drawFrame each rAF tick
+  const smoothPosRef = useRef<Map<string, SmoothPos>>(new Map());
   if (geo !== null) lastValidGeoRef.current = geo;
   geoRef.current = geo ?? lastValidGeoRef.current;
 
@@ -218,9 +260,11 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
 
     for (const car of state.cars) {
       if (car.status === "out") continue;
-      const pt = (car.x != null && car.y != null && geo?.supportsRawLiveProjection)
-        ? geo.projectRaw(car.x, car.y)
-        : geo?.at(car.lap_fraction);
+      // Use smoothed positions for click hit-test so they match what's drawn
+      const sp = smoothPosRef.current.get(car.car_id);
+      const pt = (sp && sp.x !== null && sp.y !== null && geo?.supportsRawLiveProjection)
+        ? geo.projectRaw(sp.x, sp.y)
+        : geo?.at(sp?.lapFraction ?? car.lap_fraction);
       if (!pt) continue;
       const c = toCanvas(pt.x, pt.y);
       const dx = clickX - c.x;
@@ -279,6 +323,7 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
             { width: canvas.width / dpr, height: canvas.height / dpr },
             geoRef.current,
             stateRef.current,
+            smoothPosRef.current,
             focusedCarIdRef.current,
             circuit,
             showDrsRef.current,

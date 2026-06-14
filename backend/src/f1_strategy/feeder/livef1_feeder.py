@@ -582,6 +582,13 @@ class LiveF1Feeder:
             )
             xy = self._positions_xy.get(dn)
             lap_fraction = self._estimate_lap_fraction(self._timing_driver_state.get(dn))
+            td = self._timing_driver_state.get(dn, {})
+            if td.get("Retired") or td.get("KnockedOut") or td.get("Cutoff"):
+                live_status = CarStatus.OUT
+            elif self._was_in_pit.get(dn):
+                live_status = CarStatus.IN_PIT
+            else:
+                live_status = CarStatus.RUNNING
             cars.append(CarState(
                 car_id=dn,
                 driver_code=self._driver_codes.get(dn),
@@ -595,7 +602,7 @@ class LiveF1Feeder:
                 best_lap_ms=self._best_laps.get(dn),
                 tire=tire,
                 pit_stops=self._pit_stops.get(dn, 0),
-                status=CarStatus.RUNNING,
+                status=live_status,
                 x=xy[0] if xy else None,
                 y=xy[1] if xy else None,
             ))
