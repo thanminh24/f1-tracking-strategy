@@ -64,6 +64,12 @@ class OF1Session(_Base):
     country_name: str | None = None
 
 
+class OF1TeamRadio(_Base):
+    date: str | None = None
+    driver_number: int | None = None
+    recording_url: str | None = None
+
+
 class OpenF1Client:
     def __init__(self) -> None:
         self._http = httpx.AsyncClient(
@@ -133,6 +139,10 @@ class OpenF1Client:
     async def sessions(self, **filters: object) -> list[OF1Session]:
         rows = await self._get("/sessions", **filters)
         return self._parse_list(OF1Session, rows)
+
+    async def team_radio(self, session_key: int) -> list[OF1TeamRadio]:
+        rows = await self._get("/team_radio", session_key=session_key)
+        return self._parse_list(OF1TeamRadio, rows)
 
     async def current_live_session(self) -> OF1Session | None:
         """Return the currently active session (any type: Race, Practice, Qualifying).

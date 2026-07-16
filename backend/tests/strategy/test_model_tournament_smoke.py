@@ -2,6 +2,7 @@ from f1_strategy.sim.params import CompoundParams, SimParams
 from f1_strategy.strategy.evaluation.agents import fixed_one_stop_agent, fixed_two_stop_agent
 from f1_strategy.strategy.evaluation.tournament import (
     AgentSummary,
+    build_promotion_report,
     promotion_gate_passed,
     run_tournament,
 )
@@ -52,3 +53,15 @@ def test_promotion_gate_requires_all_thresholds():
     assert promotion_gate_passed(challenger, baseline)
     bad = AgentSummary("rsrl", 10, 5.0, 11.0, 0.01, 1.0, 10.0)
     assert not promotion_gate_passed(bad, baseline)
+
+
+def test_promotion_report_requires_matching_baseline_and_challenger():
+    report = build_promotion_report(
+        [
+            AgentSummary("ppo_current", 8, 6.0, 8.0, 0.0, 1.0, 9.0),
+            AgentSummary("rsrl_2024_Testville", 8, 5.5, 9.0, 0.0, 1.0, 9.0),
+        ]
+    )
+    assert report["ready"] is True
+    assert report["baseline"] == "ppo_current"
+    assert report["challenger"] == "rsrl_2024_Testville"

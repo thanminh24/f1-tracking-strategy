@@ -20,24 +20,40 @@ ACTION_LABELS = {"STAY": "STAY", "SOFT": "PIT_SOFT", "MEDIUM": "PIT_MEDIUM", "HA
 COMPOUND_SLOT = {"SOFT": 0, "MEDIUM": 1, "HARD": 2}
 
 
+def _latest_available_model_season(models_dir, season: int, circuit: str) -> int | None:
+    """Newest season ≤ requested with a checkpoint for this circuit; else newest
+    available (e.g. circuit only trained on a later season than the live race)."""
+    seasons: list[int] = []
+    for path in models_dir.glob(f"ppo_*_{circuit}.zip"):
+        token = path.stem[len("ppo_"):-(len(circuit) + 1)]
+        try:
+            seasons.append(int(token))
+        except ValueError:
+            continue
+    if not seasons:
+        return None
+    past_or_current = [s for s in seasons if s <= season]
+    return max(past_or_current) if past_or_current else max(seasons)
+
+
 @lru_cache(maxsize=4)
 def _load_model(season: int, circuit: str):
     # Path check BEFORE the SB3/torch import: absent checkpoints must not pay the
     # multi-second torch import. NOTE: a None result is cached — training a new
     # checkpoint requires a server restart to be picked up.
     # Fall back to the latest available season for the same circuit when the
-    # exact (season, circuit) zip is absent (e.g. 2026 race, only 2024 model trained).
+    # exact (season, circuit) zip is absent (e.g. 2026 race served by the 2024
+    # model, or a circuit only trained on 2025 such as São Paulo).
     models_dir = get_settings().models_dir
     path = models_dir / f"ppo_{season}_{circuit}.zip"
     artifact_season = season
-    if not path.exists() and season != 2024:
-        fallback = models_dir / f"ppo_2024_{circuit}.zip"
-        if fallback.exists():
-            log.info("PPO: no model for %s %s, falling back to 2024", season, circuit)
-            path = fallback
-            artifact_season = 2024
     if not path.exists():
-        return None
+        fallback_season = _latest_available_model_season(models_dir, season, circuit)
+        if fallback_season is None:
+            return None
+        log.info("PPO: no model for %s %s, falling back to %s", season, circuit, fallback_season)
+        path = models_dir / f"ppo_{fallback_season}_{circuit}.zip"
+        artifact_season = fallback_season
     from stable_baselines3 import PPO  # deferred heavy import
 
     return PPO.load(str(path), device="auto"), artifact_season

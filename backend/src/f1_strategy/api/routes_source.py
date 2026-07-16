@@ -1,7 +1,7 @@
 """Source management REST endpoints.
 
 GET  /api/sessions/{key}/source  → current source + available sources
-POST /api/sessions/{key}/source  → switch source ("archive" | "live" | "livef1")
+POST /api/sessions/{key}/source  → switch source ("archive" | "live" | "livef1" | "fixture")
 """
 
 import logging
@@ -19,7 +19,7 @@ OPENF1_LIVE_URL = "https://api.openf1.org/v1/sessions?session_key=latest"
 
 
 class SourceRequest(BaseModel):
-    source: str  # "archive" | "live" | "livef1"
+    source: str  # "archive" | "live" | "livef1" | "fixture"
 
 
 async def _openf1_available() -> bool:
@@ -51,9 +51,10 @@ async def get_source(session_key: str) -> dict:
     return {
         "session_key": session_key,
         "source": registry.get_source(session_key),
-        "available_sources": ["archive", "live", "livef1"],
+        "available_sources": ["archive", "live", "livef1", "fixture"],
         "live_available": openf1_ok,
         "livef1_available": True,  # SignalR stream; always accessible
+        "fixture_available": True,
         "note": (
             None
             if openf1_ok

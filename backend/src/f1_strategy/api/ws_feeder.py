@@ -14,8 +14,6 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from f1_strategy.archive import queries
-from f1_strategy.archive.db import refresh_views
 from f1_strategy.feeder.session_registry import registry
 
 log = logging.getLogger(__name__)
@@ -31,6 +29,9 @@ async def ws_feed(websocket: WebSocket, session_key: str) -> None:
         # directly to the timing stream — archive loading would 404 on them.
         source = registry.get_source(session_key)
         if source == "archive":
+            from f1_strategy.archive import queries
+            from f1_strategy.archive.db import refresh_views
+
             if not queries.session_has_laps(session_key):
                 await asyncio.to_thread(queries.ensure_session, session_key)
                 refresh_views()

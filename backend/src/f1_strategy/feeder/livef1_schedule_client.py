@@ -14,7 +14,7 @@ for accurate detection which correctly handles GmtOffset.
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import partial
 
 log = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ def _detect_from_livetiming() -> "ScheduledSession | None":
             try:
                 local = datetime.fromisoformat(s)
                 if local.tzinfo is None:
-                    local = local.replace(tzinfo=timezone.utc) - gmt_offset
+                    local = local.replace(tzinfo=UTC) - gmt_offset
                 return local.astimezone(UTC)
             except Exception:
                 return None

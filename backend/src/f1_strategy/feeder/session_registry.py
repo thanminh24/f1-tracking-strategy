@@ -9,11 +9,7 @@ import asyncio
 import logging
 import os
 
-from f1_strategy.feeder.archive_feeder import ArchiveFeeder
-from f1_strategy.feeder.live_feeder import LiveFeeder
-from f1_strategy.feeder.livef1_feeder import LiveF1Feeder
 from f1_strategy.feeder.protocol import IFeeder
-from f1_strategy.strategy.prediction_service import PredictionService
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +20,33 @@ def _predictions_enabled() -> bool:
     return os.environ.get("F1_PREDICTIONS", "1") != "0"
 
 
+def _build_prediction_service(session_key: str):
+    if not _predictions_enabled():
+        return None
+    from f1_strategy.strategy.prediction_service import PredictionService
+
+    return PredictionService(session_key)
+
+
+def _build_feeder(session_key: str, source: str) -> IFeeder:
+    if source == "live":
+        from f1_strategy.feeder.live_feeder import LiveFeeder
+
+        return LiveFeeder(session_key)
+    if source == "livef1":
+        from f1_strategy.feeder.livef1_feeder import LiveF1Feeder
+
+        return LiveF1Feeder(session_key)
+    if source == "fixture":
+        from f1_strategy.feeder.fixture_feeder import FixtureFeeder
+
+        return FixtureFeeder(session_key)
+
+    from f1_strategy.feeder.archive_feeder import ArchiveFeeder
+
+    return ArchiveFeeder(session_key)
+
+
 class FeederSession:
     """Pump loop + subscriber fan-out for a single IFeeder instance."""
 
@@ -31,9 +54,7 @@ class FeederSession:
         self.feeder = feeder
         self.subscribers: set[asyncio.Queue] = set()
         self.pump_task: asyncio.Task | None = None
-        self.predictor = (
-            PredictionService(feeder.session_key) if _predictions_enabled() else None
-        )
+        self.predictor = _build_prediction_service(feeder.session_key)
         self._pred_lap = -1
         self._pred_task: asyncio.Task | None = None
         self.last_prediction: dict | None = None
@@ -118,18 +139,24 @@ class FeederRegistry:
 
     def __init__(self) -> None:
         self._sessions: dict[str, FeederSession] = {}
-        self._sources: dict[str, str] = {}  # session_key → "archive" | "live"
+        self._sources: dict[str, str] = {}  # session_key → active source id
 
     def get_source(self, session_key: str) -> str:
-        return self._sources.get(session_key, "archive")
+        if session_key in self._sources:
+            return self._sources[session_key]
+        if session_key == "fixture":
+            return "fixture"
+        if session_key == "live":
+            return "livef1"
+        return "archive"
 
     def set_source(self, session_key: str, source: str) -> None:
         """Switch the active source; tears down the existing session so the next
         get_or_create() instantiates a fresh feeder of the requested type.
 
-        Valid sources: "archive" | "live" (OpenF1) | "livef1" (F1 SignalR fallback)
+        Valid sources: "archive" | "live" (OpenF1) | "livef1" (F1 SignalR fallback) | "fixture"
         """
-        if source not in ("archive", "live", "livef1"):
+        if source not in ("archive", "live", "livef1", "fixture"):
             raise ValueError(f"unknown source: {source!r}")
         if self._sources.get(session_key) == source:
             return
@@ -139,16 +166,11 @@ class FeederRegistry:
             sess.pump_task.cancel()
 
     def get_or_create(self, session_key: str) -> FeederSession:
-        source = self._sources.get(session_key, "archive")
+        source = self.get_source(session_key)
         sess = self._sessions.get(session_key)
         # create fresh session when absent or pump has died
         if sess is None or (sess.pump_task and sess.pump_task.done()):
-            if source == "live":
-                feeder: IFeeder = LiveFeeder(session_key)
-            elif source == "livef1":
-                feeder = LiveF1Feeder(session_key)
-            else:
-                feeder = ArchiveFeeder(session_key)
+            feeder = _build_feeder(session_key, source)
             sess = FeederSession(feeder)
             sess.start()
             self._sessions[session_key] = sess

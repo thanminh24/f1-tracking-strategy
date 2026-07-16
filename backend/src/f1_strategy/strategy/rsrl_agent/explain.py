@@ -71,7 +71,7 @@ def perturbation_importance(
 @dataclass
 class SurrogateResult:
     """Shallow decision tree trained to mimic RSRL action labels."""
-    tree: "DecisionTreeClassifier"
+    tree: DecisionTreeClassifier
     fidelity: float  # fraction of sampled states where tree == RSRL
     n_samples: int
     action_labels: list[str]
@@ -117,7 +117,9 @@ def fit_surrogate_tree(
     tree.fit(X, labels)
     fidelity = float((tree.predict(X) == labels).mean())
 
-    return SurrogateResult(tree=tree, fidelity=fidelity, n_samples=n_samples, action_labels=action_labels)
+    return SurrogateResult(
+        tree=tree, fidelity=fidelity, n_samples=n_samples, action_labels=action_labels
+    )
 
 
 @dataclass
