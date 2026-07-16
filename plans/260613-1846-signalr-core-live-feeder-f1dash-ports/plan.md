@@ -1,18 +1,25 @@
 ---
-title: "SignalR Core Live Feeder + f1-dash Feature Ports"
+title: SignalR Core Live Feeder + f1-dash Feature Ports
 description: >-
-  Replace broken livef1/OpenF1 live pipeline with direct SignalR Core
-  websocket (livetiming.formula1.com/signalrcore — no auth, verified working).
-  Port high-value f1-dash features: mini-sectors, DRS, TrackStatus map colors,
-  multiviewer track maps, ChampionshipPrediction, ExtrapolatedClock, qualifying UI.
-status: active
+  Replace broken livef1/OpenF1 live pipeline with direct SignalR Core websocket
+  (livetiming.formula1.com/signalrcore — no auth, verified working). Port
+  high-value f1-dash features: mini-sectors, DRS, TrackStatus map colors,
+  multiviewer track maps, ChampionshipPrediction, ExtrapolatedClock, qualifying
+  UI.
+status: completed
 priority: P0
 branch: main
-tags: [live, signalr, telemetry, track-map, f1-dash]
+tags:
+  - live
+  - signalr
+  - telemetry
+  - track-map
+  - f1-dash
 blockedBy: []
-blocks: [260614-0005-live-position-and-parity-fix]
-created: "2026-06-13"
-research: "plans/reports/researcher-260613-1854-f1-dash-signalr-core-live-data-report.md"
+blocks:
+  - 260614-0005-live-position-and-parity-fix
+created: '2026-06-13'
+research: plans/reports/researcher-260613-1854-f1-dash-signalr-core-live-data-report.md
 ---
 
 # SignalR Core Live Feeder + f1-dash Feature Ports
@@ -31,11 +38,11 @@ Research: `plans/reports/researcher-260613-1854-f1-dash-signalr-core-live-data-r
 
 | Phase | Name | Status | Priority | Effort |
 |-------|------|--------|----------|--------|
-| 1 | [SignalR Core Backend Feeder](./phase-01-signalr-core-backend-feeder.md) | Pending | P0 | 3h |
-| 2 | [Frontend Live State (CarData+Position)](./phase-02-frontend-live-state-cardata-position.md) | Pending | P0 | 2h |
-| 3 | [Multiviewer Track Map API](./phase-03-multiviewer-track-map-api.md) | Pending | P0 | 2h |
-| 4 | [f1-dash Ports Ph1: MiniSectors + DRS + TrackStatus](./phase-04-f1-dash-feature-ports-phase-1-minisectors-drs-trackstatus.md) | Pending | P1 | 3h |
-| 5 | [f1-dash Ports Ph2: Championship + Clock + Qualifying](./phase-05-f1-dash-feature-ports-phase-2-championship-extrapolatedclock.md) | Pending | P2 | 3h |
+| 1 | [SignalR Core Backend Feeder](./phase-01-signalr-core-backend-feeder.md) | Completed | P0 | 3h |
+| 2 | [Frontend Live State (CarData+Position)](./phase-02-frontend-live-state-cardata-position.md) | Completed | P0 | 2h |
+| 3 | [Multiviewer Track Map API](./phase-03-multiviewer-track-map-api.md) | Completed | P0 | 2h |
+| 4 | [f1-dash Ports Ph1: MiniSectors + DRS + TrackStatus](./phase-04-f1-dash-feature-ports-phase-1-minisectors-drs-trackstatus.md) | Completed | P1 | 3h |
+| 5 | [f1-dash Ports Ph2: Championship + Clock + Qualifying](./phase-05-f1-dash-feature-ports-phase-2-championship-extrapolatedclock.md) | Completed | P2 | 3h |
 
 ## Execution Order
 

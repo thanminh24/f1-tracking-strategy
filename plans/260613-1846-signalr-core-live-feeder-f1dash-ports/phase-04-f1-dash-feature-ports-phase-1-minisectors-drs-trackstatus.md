@@ -1,10 +1,12 @@
 ---
 phase: 4
-title: "f1-dash Feature Ports Phase 1 (MiniSectors DRS TrackStatus)"
-status: pending
+title: f1-dash Feature Ports Phase 1 (MiniSectors DRS TrackStatus)
+status: completed
 priority: P1
-effort: "3h"
-dependencies: [2, 3]
+effort: 3h
+dependencies:
+  - 2
+  - 3
 ---
 
 # Phase 4: f1-dash Feature Ports Phase 1 — MiniSectors, DRS, TrackStatus

@@ -1,10 +1,11 @@
 ---
 phase: 3
-title: "Multiviewer Track Map API"
-status: pending
+title: Multiviewer Track Map API
+status: completed
 priority: P0
-effort: "2h"
-dependencies: [1]
+effort: 2h
+dependencies:
+  - 1
 ---
 
 # Phase 3: Multiviewer Track Map API

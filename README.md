@@ -66,6 +66,26 @@ Or use the convenience scripts:
 make status  # check running PIDs
 ```
 
+Docker live-core:
+
+```bash
+docker compose up --build
+```
+
+This boots the lightweight private-use profile on `http://localhost:3000` with:
+
+- live timing + Broadcast/Pit Wall workspaces
+- deterministic fixture workspace for offline UI/dev validation
+- live/archive radio metadata support
+- no bundled race archive download
+- archive/what-if/model inference disabled in the default container profile
+
+Open the deterministic fixture directly:
+
+```bash
+http://localhost:3000/session/fixture?source=fixture&workspace=broadcast
+```
+
 ---
 
 ## Project Layout
@@ -163,8 +183,15 @@ Models live in `data/models/` and are committed to the repo (~4 MB total).
 make calibrate-all                                         # fit SimParams for all circuits
 make train-models                                          # SC hazard + LightGBM behavior
 make train-ppo ARGS="--season 2024 --circuit Sakhir"      # PPO for one circuit
-# RS-RL challenger (see backend/scripts/run_model_tournament.py for tournament eval)
+cd backend && uv run python scripts/run_model_tournament.py \
+  --season 2024 --circuit Barcelona --train-rsrl --timesteps 10000 --n-sims 8
 ```
+
+Recent local trial:
+
+- `2024 Barcelona` fresh RSRL challenger trained for `10,000` timesteps
+- Output report: `plans/reports/rsrl-barcelona-promotion-trial.json`
+- Result: not promotion-ready versus `ppo_current`
 
 ---
 
@@ -183,6 +210,14 @@ make train-models
 make train-ppo ARGS="--season 2024 --circuit Sakhir --device cuda"
 ```
 
+Direct RL benchmark / promotion trial:
+
+```bash
+cd backend
+uv run python scripts/run_model_tournament.py \
+  --season 2024 --circuit Barcelona --train-rsrl --timesteps 10000 --n-sims 8 --device cpu
+```
+
 ---
 
 ## Configuration
@@ -195,6 +230,16 @@ Environment variables (create `backend/.env` for local dev):
 | `CORS_ORIGINS` | `http://localhost:3000` | Allowed CORS origins |
 
 The backend is intentionally zero-config for local dev — no API keys, database setup, or Docker required.
+
+Runtime profile flags used by Docker:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `F1_RUNTIME_PROFILE` | `full` | Human-readable profile label surfaced by `/api/capabilities` |
+| `F1_ENABLE_ARCHIVE` | `1` | Enables archive REST routes and replay-oriented features |
+| `F1_ENABLE_WHATIF` | `1` | Enables the what-if strategy endpoint |
+| `F1_PREDICTIONS` | `1` | Enables live/replay prediction generation |
+| `F1_ENABLE_TRAINING` | `0` | Surfaces training capability in `/api/capabilities` |
 
 ---
 
@@ -210,7 +255,22 @@ With backend running at `:8000`:
 
 Key WebSocket endpoints:
 - `ws://localhost:8000/ws/feed/live` — live session feed
+- `ws://localhost:8000/ws/feed/fixture` — deterministic offline fixture feed
 - `ws://localhost:8000/ws/replay/{session_key}` — archive replay (e.g. `2024_1_R`)
+
+---
+
+## UI Attribution and License Notice
+
+The Broadcast workspace in this repository follows the user-approved private-use path of adapting the F1 Dash UI direction and layout structure for our own Pit Wall system.
+
+- Upstream reference: `slowlydev/f1-dash` (`v4.0.6`)
+- Upstream license: `AGPL-3.0`
+- This repo keeps its own backend, state, telemetry, strategy, replay, and packaging layers
+- When reusing or adapting F1 Dash-derived UI structure, keep clear credit to the upstream project and do not remove its license obligations
+- Formula 1, team names, and related marks remain property of their respective owners
+
+If this project moves beyond private/internal use, review AGPL compliance, trademark usage, and redistribution obligations before shipping it publicly.
 
 ---
 

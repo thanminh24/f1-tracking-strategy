@@ -1,9 +1,9 @@
 ---
 phase: 1
-title: "SignalR Core Backend Feeder"
-status: pending
+title: SignalR Core Backend Feeder
+status: completed
 priority: P0
-effort: "3h"
+effort: 3h
 dependencies: []
 ---
 

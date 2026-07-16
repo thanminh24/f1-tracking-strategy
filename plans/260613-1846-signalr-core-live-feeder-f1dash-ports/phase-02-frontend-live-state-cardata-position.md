@@ -1,10 +1,11 @@
 ---
 phase: 2
-title: "Frontend Live State (CarData+Position)"
-status: pending
+title: Frontend Live State (CarData+Position)
+status: completed
 priority: P0
-effort: "2h"
-dependencies: [1]
+effort: 2h
+dependencies:
+  - 1
 ---
 
 # Phase 2: Frontend Live State (CarData+Position)

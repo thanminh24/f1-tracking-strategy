@@ -1,0 +1,353 @@
+{
+  "episodes": [
+    {
+      "agent": "stay",
+      "seed": 7,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.012036002772219945
+    },
+    {
+      "agent": "stay",
+      "seed": 8,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.0058320019888924435
+    },
+    {
+      "agent": "stay",
+      "seed": 9,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.005757994586019777
+    },
+    {
+      "agent": "stay",
+      "seed": 10,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.0054899956012377515
+    },
+    {
+      "agent": "stay",
+      "seed": 11,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.008045000868150964
+    },
+    {
+      "agent": "stay",
+      "seed": 12,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.008915000762499403
+    },
+    {
+      "agent": "stay",
+      "seed": 13,
+      "position": 18,
+      "invalid_actions": 0,
+      "inference_ms": 0.007851000191294588
+    },
+    {
+      "agent": "stay",
+      "seed": 14,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 0.006274000043049455
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 7,
+      "position": 10,
+      "invalid_actions": 0,
+      "inference_ms": 0.019668998902488966
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 8,
+      "position": 18,
+      "invalid_actions": 0,
+      "inference_ms": 0.007972997082106303
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 9,
+      "position": 11,
+      "invalid_actions": 0,
+      "inference_ms": 0.0072740003815852106
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 10,
+      "position": 9,
+      "invalid_actions": 0,
+      "inference_ms": 0.007391002327494789
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 11,
+      "position": 11,
+      "invalid_actions": 0,
+      "inference_ms": 0.007324999387492426
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 12,
+      "position": 13,
+      "invalid_actions": 0,
+      "inference_ms": 0.007244005246320739
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 13,
+      "position": 8,
+      "invalid_actions": 0,
+      "inference_ms": 0.007724996976321563
+    },
+    {
+      "agent": "fixed_one_stop",
+      "seed": 14,
+      "position": 11,
+      "invalid_actions": 0,
+      "inference_ms": 0.007655000445083715
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 7,
+      "position": 9,
+      "invalid_actions": 0,
+      "inference_ms": 0.008206002348742913
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 8,
+      "position": 14,
+      "invalid_actions": 0,
+      "inference_ms": 0.007598006050102413
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 9,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 0.0076120040830574
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 10,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 0.009620002856536303
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 11,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 0.009383003089169506
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 12,
+      "position": 6,
+      "invalid_actions": 0,
+      "inference_ms": 0.008473002708342392
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 13,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 0.008111996976367664
+    },
+    {
+      "agent": "fixed_two_stop",
+      "seed": 14,
+      "position": 7,
+      "invalid_actions": 0,
+      "inference_ms": 0.007731998266535811
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 7,
+      "position": 6,
+      "invalid_actions": 0,
+      "inference_ms": 193.8311559979411
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 8,
+      "position": 14,
+      "invalid_actions": 0,
+      "inference_ms": 20.005383998977777
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 9,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 19.82871600012004
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 10,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 21.434008996038756
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 11,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 30.083423998803482
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 12,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 26.245418001963117
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 13,
+      "position": 5,
+      "invalid_actions": 0,
+      "inference_ms": 22.70861299984972
+    },
+    {
+      "agent": "ppo_current",
+      "seed": 14,
+      "position": 6,
+      "invalid_actions": 0,
+      "inference_ms": 23.671667003327457
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 7,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 13.027644002249872
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 8,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 11.974087000453437
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 9,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 12.048947000039334
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 10,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 11.928672001886298
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 11,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 11.68653900094796
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 12,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 11.768674997256312
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 13,
+      "position": 18,
+      "invalid_actions": 0,
+      "inference_ms": 11.669998001707427
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "seed": 14,
+      "position": 19,
+      "invalid_actions": 0,
+      "inference_ms": 12.068192000697309
+    }
+  ],
+  "summaries": [
+    {
+      "agent": "fixed_one_stop",
+      "n_sims": 8,
+      "mean_finish_position": 11.375,
+      "expected_points": 0.875,
+      "invalid_action_rate": 0.0,
+      "p50_inference_ms": 0.00011598485522854114,
+      "p95_inference_ms": 0.00029801513488619645
+    },
+    {
+      "agent": "fixed_two_stop",
+      "n_sims": 8,
+      "mean_finish_position": 7.0,
+      "expected_points": 7.0,
+      "invalid_action_rate": 0.0,
+      "p50_inference_ms": 0.00012433336892034717,
+      "p95_inference_ms": 0.00014575761903842883
+    },
+    {
+      "agent": "ppo_current",
+      "n_sims": 8,
+      "mean_finish_position": 6.375,
+      "expected_points": 8.25,
+      "invalid_action_rate": 0.0,
+      "p50_inference_ms": 0.3586616212625372,
+      "p95_inference_ms": 2.9368356969385014
+    },
+    {
+      "agent": "rsrl_2024_Barcelona",
+      "n_sims": 8,
+      "mean_finish_position": 18.875,
+      "expected_points": 0.0,
+      "invalid_action_rate": 0.0,
+      "p50_inference_ms": 0.18142556061293086,
+      "p95_inference_ms": 0.1973885454886344
+    },
+    {
+      "agent": "stay",
+      "n_sims": 8,
+      "mean_finish_position": 18.875,
+      "expected_points": 0.0,
+      "invalid_action_rate": 0.0,
+      "p50_inference_ms": 0.00011895454835294831,
+      "p95_inference_ms": 0.00018236367836696886
+    }
+  ],
+  "promotion": {
+    "ready": true,
+    "baseline": "ppo_current",
+    "challenger": "rsrl_2024_Barcelona",
+    "promote": false,
+    "position_gain": -12.5,
+    "expected_points_gain_pct": -1.0,
+    "invalid_action_rate": 0.0,
+    "p95_inference_ms": 0.1973885454886344,
+    "gates": {
+      "head_to_head_win_rate": 0.55,
+      "mean_finish_position_gain": 0.25,
+      "expected_points_gain_pct": 0.03,
+      "invalid_strategy_rate": 0.0,
+      "p95_inference_ms": 50.0
+    }
+  },
+  "training": {
+    "checkpoint": "/home/than-minh/project/F1_RL/data/models/rsrl_2024_Barcelona.pt",
+    "timesteps": 10000,
+    "device": "cpu"
+  }
+}

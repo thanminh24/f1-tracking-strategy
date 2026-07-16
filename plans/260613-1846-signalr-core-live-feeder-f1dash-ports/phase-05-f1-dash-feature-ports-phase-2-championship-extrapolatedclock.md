@@ -1,10 +1,13 @@
 ---
 phase: 5
-title: "f1-dash Feature Ports Phase 2 (Championship + ExtrapolatedClock + Qualifying UI)"
-status: pending
+title: >-
+  f1-dash Feature Ports Phase 2 (Championship + ExtrapolatedClock + Qualifying
+  UI)
+status: completed
 priority: P2
-effort: "3h"
-dependencies: [4]
+effort: 3h
+dependencies:
+  - 4
 ---
 
 # Phase 5: f1-dash Feature Ports Phase 2 — Championship, Clock, Qualifying UI
