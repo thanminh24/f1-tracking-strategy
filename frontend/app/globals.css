@@ -32,6 +32,7 @@
   --track-sc:     #78350F;
   --track-vsc:    #713F12;
   --track-red:    #450A0A;
+  --f1-broadcast-glow: rgba(225, 6, 0, 0.18);
 }
 
 /* Base */
@@ -46,6 +47,12 @@ html, body, #__next {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at top, rgba(225, 6, 0, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent 22%);
 }
 
 /* Tailwind utility aliases */
@@ -148,16 +155,44 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 /* Panel drag handle — replaces the border between resizable panels */
+.resize-handle,
 .drag-handle {
-  width: 4px;
   flex-shrink: 0;
-  cursor: col-resize;
   background-color: var(--f1-border);
   transition: background-color 0.15s;
   user-select: none;
   touch-action: none;
 }
+
+.resize-handle-x,
+.drag-handle {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.resize-handle-y {
+  height: 4px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+.resize-handle:hover,
+.resize-handle[data-dragging],
 .drag-handle:hover,
 .drag-handle[data-dragging] {
   background-color: rgba(59, 130, 246, 0.5);
+}
+
+.broadcast-shell {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0)),
+    linear-gradient(135deg, rgba(225,6,0,0.06), transparent 22%);
+}
+
+.broadcast-panel {
+  background: rgba(18, 18, 18, 0.92);
+}
+
+.broadcast-marquee {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
 }

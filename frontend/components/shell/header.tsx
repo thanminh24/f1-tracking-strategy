@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { F1Logo } from "../ui/f1-logo";
 import { SessionClock } from "../widgets/session-clock";
 import { WeatherWidget } from "../widgets/weather-widget";
 import { useRaceStateStore } from "../../lib/race-state-store";
+import { WorkspaceSwitch } from "../workspace/workspace-switch";
+import type { WorkspaceMode } from "../../lib/types";
 
 /** Parse "0:43:27" or "43:27" → total seconds */
 function parseRemaining(s: string): number {
@@ -25,30 +26,8 @@ function fmtSecs(totalSecs: number): string {
 
 function ExtrapolatedClockWidget() {
   const clock = useRaceStateStore((s) => s.extrapolatedClock);
-  const [display, setDisplay] = useState<string>("");
-  const secsRef = useRef<number>(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (!clock?.Remaining) return;
-    const parsed = parseRemaining(clock.Remaining);
-    secsRef.current = parsed;
-    setDisplay(fmtSecs(parsed));
-
-    if (clock.Extrapolating) {
-      // Server paused/SC — tick down client-side
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        secsRef.current = Math.max(0, secsRef.current - 1);
-        setDisplay(fmtSecs(secsRef.current));
-      }, 1000);
-    } else {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [clock?.Remaining, clock?.Extrapolating]);
-
   if (!clock) return null;
+  const display = fmtSecs(parseRemaining(clock.Remaining));
   return (
     <span
       className={`font-data text-sm tabular-nums shrink-0 ${
@@ -72,10 +51,18 @@ interface HeaderProps {
   sessionLabel?: string;
   sessionKey?: string;
   /** "live" | "archive" — shows coloured badge */
-  sourceMode?: "live" | "archive";
+  sourceMode?: "live" | "archive" | "fixture";
+  workspaceMode?: WorkspaceMode;
+  onWorkspaceChange?: (mode: WorkspaceMode) => void;
 }
 
-export function Header({ sessionLabel, sessionKey, sourceMode }: HeaderProps) {
+export function Header({
+  sessionLabel,
+  sessionKey,
+  sourceMode,
+  workspaceMode,
+  onWorkspaceChange,
+}: HeaderProps) {
   const router = useRouter();
   const connected = useRaceStateStore((s) => s.connected);
   const reconnecting = useRaceStateStore((s) => s.reconnecting);
@@ -134,28 +121,40 @@ export function Header({ sessionLabel, sessionKey, sourceMode }: HeaderProps) {
       {/* Source toggle — only when in a session */}
       {sourceMode && (
         <div className="flex items-center gap-1 border border-f1-border rounded-lg p-0.5">
-          <button
-            onClick={() => handleSourceToggle("live")}
-            className={`chip text-[10px] transition-colors ${
-              sourceMode === "live"
-                ? "bg-red-900/60 text-f1-red border border-f1-red/40 live-pulse"
-                : "bg-transparent text-f1-text-dim border border-transparent hover:border-f1-border/50"
-            }`}
-          >
-            ● LIVE
-          </button>
-          <button
-            onClick={() => handleSourceToggle("archive")}
-            className={`chip text-[10px] transition-colors ${
-              sourceMode === "archive"
-                ? "bg-zinc-800 text-f1-text border border-f1-border"
-                : "bg-transparent text-f1-text-dim border border-transparent hover:border-f1-border/50"
-            }`}
-          >
-            ARCHIVE
-          </button>
+          {sourceMode === "fixture" ? (
+            <span className="chip text-[10px] bg-cyan-950/70 text-cyan-300 border border-cyan-500/30">
+              DEV FIXTURE
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={() => handleSourceToggle("live")}
+                className={`chip text-[10px] transition-colors ${
+                  sourceMode === "live"
+                    ? "bg-red-900/60 text-f1-red border border-f1-red/40 live-pulse"
+                    : "bg-transparent text-f1-text-dim border border-transparent hover:border-f1-border/50"
+                }`}
+              >
+                ● LIVE
+              </button>
+              <button
+                onClick={() => handleSourceToggle("archive")}
+                className={`chip text-[10px] transition-colors ${
+                  sourceMode === "archive"
+                    ? "bg-zinc-800 text-f1-text border border-f1-border"
+                    : "bg-transparent text-f1-text-dim border border-transparent hover:border-f1-border/50"
+                }`}
+              >
+                ARCHIVE
+              </button>
+            </>
+          )}
         </div>
       )}
+
+      {workspaceMode && onWorkspaceChange ? (
+        <WorkspaceSwitch mode={workspaceMode} onChange={onWorkspaceChange} />
+      ) : null}
 
       {/* Qualifying session part badge (live only) */}
       {partMeta && (

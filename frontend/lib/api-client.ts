@@ -4,6 +4,7 @@ import type {
   LapRow,
   OutlinePoint,
   ResultRow,
+  RuntimeCapabilities,
   StintRow,
   TeamRadioMessage,
   TelemetrySample,
@@ -13,11 +14,15 @@ import type {
 // Browser: empty string → same-origin (nginx routes /api/* to backend).
 // SSR (Next.js server components): must use an absolute URL — no browser host available.
 // BACKEND_INTERNAL_URL is the backend reachable from the Next.js Node process.
+// Treat an empty NEXT_PUBLIC_API_URL as "unset" — `??` keeps "" and would
+// leave SSR with a host-less relative URL (fetch throws "Failed to parse URL").
+const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL;
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window === "undefined"
-    ? (process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000")
-    : "");
+  PUBLIC_API_URL && PUBLIC_API_URL.length > 0
+    ? PUBLIC_API_URL
+    : typeof window === "undefined"
+      ? (process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000")
+      : "";
 
 // Browser: derive ws(s):// from current page origin so nginx WebSocket proxy works.
 // Server-side (Next.js RSC): fall back to loopback for prefetch calls.
@@ -28,6 +33,17 @@ export const WS_BASE =
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return res.json();
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
   return res.json();
 }
@@ -58,11 +74,17 @@ export const api = {
     getJson<TelemetrySample[]>(`/api/sessions/${key}/telemetry/${carId}/${lap}`),
   teamRadio: (key: string) =>
     getJson<TeamRadioMessage[]>(`/api/sessions/${key}/team-radio`),
+  transcribeRadio: (audioUrl: string) =>
+    postJson<{ text: string | null; status: string; detail?: string | null }>(
+      "/api/team-radio/transcribe",
+      { audio_url: audioUrl },
+    ),
   calendar: (year: number) => getJson<CalendarEvent[]>(`/api/calendar/${year}`),
   liveSession: () =>
     getJson<{ session_key: string | null; openf1_key: number | null; status: string; session_type?: string; circuit?: string; year?: number }>("/api/live/current-session"),
   schedule: () =>
     getJson<{ sessions: ScheduleSession[] }>("/api/live/schedule").then((r) => r.sessions),
+  capabilities: () => getJson<RuntimeCapabilities>("/api/capabilities"),
 };
 
 export interface CalendarEvent {

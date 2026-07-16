@@ -6,6 +6,7 @@ import type { ScheduleSession } from "../../lib/api-client";
 
 interface Props {
   initialSchedule: ScheduleSession[];
+  showFixture?: boolean;
 }
 
 function formatCountdown(diffMs: number): string {
@@ -24,7 +25,7 @@ function formatLocalTime(iso: string): string {
   }
 }
 
-export function LiveSchedule({ initialSchedule }: Props) {
+export function LiveSchedule({ initialSchedule, showFixture = false }: Props) {
   const [now, setNow] = useState<Date>(() => new Date());
 
   useEffect(() => {
@@ -47,6 +48,28 @@ export function LiveSchedule({ initialSchedule }: Props) {
 
   return (
     <div className="flex flex-col gap-3 p-4 overflow-y-auto scrollbar-thin flex-1">
+      {showFixture ? (
+        <Link
+          href="/session/fixture?source=fixture&workspace=broadcast"
+          className="group flex items-center gap-4 rounded-xl border border-cyan-500/25 bg-[linear-gradient(135deg,rgba(8,145,178,0.12),rgba(15,23,42,0.3))] p-4"
+        >
+          <span className="chip border border-cyan-400/30 bg-cyan-950/70 text-cyan-300 text-xs shrink-0">
+            DEV FIXTURE
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-f1-text truncate">
+              Deterministic race fixture · Fixture Ring
+            </div>
+            <div className="text-xs text-f1-text-dim">
+              Stable telemetry, radio captures, flags, and lap progression for UI/dev work.
+            </div>
+          </div>
+          <span className="text-sm font-semibold text-cyan-300 group-hover:underline shrink-0">
+            Open →
+          </span>
+        </Link>
+      ) : null}
+
       {active.map((s) => (
         <Link
           key={s.openf1_key}

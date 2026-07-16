@@ -6,7 +6,7 @@ import { teamColor, formatLapTime } from "../../lib/team-colors";
 import { Panel } from "../ui/panel";
 
 export function HeadToHeadCard() {
-  const cars = useRaceStateStore((s) => s.state?.cars ?? []);
+  const cars = useRaceStateStore((s) => s.state?.cars) ?? [];
   const prediction = usePredictionStore((s) => s.prediction);
 
   const sorted = [...cars]

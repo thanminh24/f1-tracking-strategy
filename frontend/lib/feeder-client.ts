@@ -5,7 +5,8 @@ import { API_BASE, WS_BASE } from "./api-client";
 import { useLiveTelemetryStore } from "./live-telemetry-store";
 import { usePredictionStore } from "./prediction-store";
 import { useRaceStateStore } from "./race-state-store";
-import type { WsMessage } from "./types";
+import type { RaceState, ReplayStatus, WsMessage } from "./types";
+import { cancelWsFrameFlush, scheduleWsFrameFlush } from "./ws-frame-batcher";
 
 export type ControlAction = "play" | "pause" | "speed" | "seek";
 
@@ -13,6 +14,19 @@ export class FeederClient {
   private ws: WebSocket | null = null;
   private closed = false;
   private retryMs = 1000;
+  private pendingRaceState: RaceState | null = null;
+  private pendingStatus: ReplayStatus | null = null;
+  private readonly flushFrame = () => {
+    const store = useRaceStateStore.getState();
+    if (this.pendingRaceState) {
+      store.setState(this.pendingRaceState);
+      this.pendingRaceState = null;
+    }
+    if (this.pendingStatus) {
+      store.setStatus(this.pendingStatus);
+      this.pendingStatus = null;
+    }
+  };
 
   constructor(private sessionKey: string) {}
 
@@ -32,16 +46,23 @@ export class FeederClient {
     this.ws.onmessage = (ev) => {
       let msg: WsMessage;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.type === "race_state") store.setState(msg.data);
-      else if (msg.type === "replay_status") store.setStatus(msg.data);
-      else if (msg.type === "predictions")
+      if (msg.type === "race_state") {
+        this.pendingRaceState = msg.data;
+        scheduleWsFrameFlush(this.flushFrame);
+      } else if (msg.type === "replay_status") {
+        this.pendingStatus = msg.data;
+        scheduleWsFrameFlush(this.flushFrame);
+      } else if (msg.type === "predictions")
         usePredictionStore.getState().setPrediction(msg.data);
       else if (msg.type === "race_control")
-        msg.data.forEach((m) => store.addRaceControlMessage(m));
+        store.mergeRaceControl(msg.data);
       else if (msg.type === "telemetry")
         useLiveTelemetryStore.getState().setAll(msg.data);
     };
     this.ws.onclose = () => {
+      cancelWsFrameFlush(this.flushFrame);
+      this.pendingRaceState = null;
+      this.pendingStatus = null;
       store.setConnected(false);
       if (!this.closed) {
         store.setReconnecting(true);
@@ -62,7 +83,7 @@ export class FeederClient {
   }
 
   /** Switch data source. Tears down the backend feeder session and reconnects. */
-  async setSource(source: "archive" | "live"): Promise<void> {
+  async setSource(source: "archive" | "live" | "fixture"): Promise<void> {
     await fetch(`${API_BASE}/api/sessions/${this.sessionKey}/source`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -83,6 +104,9 @@ export class FeederClient {
 
   close(): void {
     this.closed = true;
+    cancelWsFrameFlush(this.flushFrame);
+    this.pendingRaceState = null;
+    this.pendingStatus = null;
     this.ws?.close();
     useRaceStateStore.getState().reset();
     usePredictionStore.getState().reset();

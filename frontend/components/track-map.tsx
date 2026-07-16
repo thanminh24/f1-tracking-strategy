@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useRaceStateStore } from "../lib/race-state-store";
 import { teamColor } from "../lib/team-colors";
 import { useTrackGeo } from "../lib/use-track-geo";
+import { useSmoothCarPositions } from "../lib/use-smooth-car-positions";
 import { DRS_ZONES, normalizeDrsCircuit } from "../lib/drs-zones";
 import { LiveTelemetryPanel } from "./live-telemetry-panel";
-import type { CarState } from "../lib/types";
 
 interface Props {
   sessionKey: string;
@@ -37,30 +37,23 @@ function drsZonePath(
   return `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join("L")}`;
 }
 
-function CarDot({
-  car,
+// Position is driven imperatively by useSmoothCarPositions via registerRef, so
+// this only re-renders when team/label/focus change — never per position tick.
+const CarDot = memo(function CarDot({
+  team,
+  label,
   focused,
-  geo,
+  registerRef,
 }: {
-  car: CarState;
+  team: string | null;
+  label: string;
   focused: boolean;
-  geo: ReturnType<typeof useTrackGeo>;
+  registerRef: (el: SVGGElement | null) => void;
 }) {
-  const color = teamColor(car.team);
-  const pt = car.x != null && car.y != null && geo!.supportsRawLiveProjection
-    ? geo!.projectRaw(car.x, car.y)
-    : geo!.at(car.lap_fraction);
-
-  const label = car.driver_code?.slice(0, 3) ?? car.car_id;
+  const color = teamColor(team);
 
   return (
-    // CSS translate inside SVG uses SVG user units — transition gives smooth 0.8s linear glide
-    <g
-      style={{
-        transform: `translate(${pt.x.toFixed(2)}px, ${pt.y.toFixed(2)}px)`,
-        transition: "transform 0.8s linear",
-      }}
-    >
+    <g ref={registerRef} style={{ willChange: "transform" }}>
       {focused && (
         <circle r={13} fill="none" stroke="#FFFFFF" strokeWidth={1.5} />
       )}
@@ -87,7 +80,50 @@ function CarDot({
       </text>
     </g>
   );
-}
+});
+
+// Pit-lane box — lists cars currently in the pit so they are not drawn stopped
+// in the middle of the track. Click a chip to focus that car.
+const PitLaneBox = memo(function PitLaneBox({
+  cars,
+  focusedCarId,
+  onFocus,
+}: {
+  cars: { car_id: string; driver_code: string | null; team: string | null }[];
+  focusedCarId: string | null;
+  onFocus: (id: string) => void;
+}) {
+  if (cars.length === 0) return null;
+  return (
+    <div className="absolute top-2 left-2 z-10 max-w-[45%]">
+      <div className="rounded bg-f1-surface/85 border border-f1-border px-2 py-1.5 backdrop-blur-sm">
+        <div className="text-[9px] font-semibold tracking-wider text-f1-text-dim mb-1">
+          PIT LANE · {cars.length}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {cars.map((c) => {
+            const color = teamColor(c.team);
+            const focused = c.car_id === focusedCarId;
+            return (
+              <button
+                key={c.car_id}
+                onClick={() => onFocus(c.car_id)}
+                className="chip text-[10px] font-bold leading-none px-1.5 py-1 rounded"
+                style={{
+                  backgroundColor: color + "26",
+                  color,
+                  border: `1px solid ${focused ? "#FFFFFF" : color + "66"}`,
+                }}
+              >
+                {c.driver_code?.slice(0, 3) ?? c.car_id}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props) {
   const isLive = sessionKey === "live";
@@ -108,7 +144,26 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
 
   const [showDrs, setShowDrs] = useState(true);
 
-  // Prefetch track outline
+  // Cars on track get a moving dot (running + finished — the latter keep valid
+  // last positions). Cars in the pit lane have stale/garage GPS coords that
+  // would otherwise render them stopped mid-track, so they go in the pit box.
+  const runningCars = useMemo(
+    () => state?.cars.filter((c) => c.status === "running" || c.status === "finished") ?? [],
+    [state?.cars],
+  );
+  const pitCars = useMemo(
+    () =>
+      (state?.cars.filter((c) => c.status === "in_pit" || c.status === "pitting") ?? [])
+        .sort((a, b) => a.position - b.position),
+    [state?.cars],
+  );
+  const sortedCars = useMemo(
+    () => [...runningCars].sort((a, b) => b.position - a.position),
+    [runningCars],
+  );
+
+  const { registerCar, getRenderedPoint } = useSmoothCarPositions(geo, runningCars);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = sessionKey === "live" && circuit
@@ -121,10 +176,6 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
   const isGreen = state?.track_status === "green";
   const drsCircuit = normalizeDrsCircuit(circuit);
   const drsZones = drsCircuit ? DRS_ZONES[drsCircuit] : undefined;
-
-  // Active cars (not retired) sorted by position — OUT cars hidden from map entirely
-  const activeCars = state?.cars.filter((c) => c.status !== "out") ?? [];
-  const sorted = [...activeCars].sort((a, b) => a.position - b.position);
 
   return (
     <div className={`relative w-full h-full ${scActive ? "sc-pulse-overlay" : ""}`}>
@@ -160,10 +211,12 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
             const svgPt = pt.matrixTransform(svgEl.getScreenCTM()!.inverse());
             let nearest: string | null = null;
             let minDist = 15;
-            for (const car of activeCars) {
-              const cp = car.x != null && car.y != null && geo.supportsRawLiveProjection
-                ? geo.projectRaw(car.x, car.y)
-                : geo.at(car.lap_fraction);
+            for (const car of runningCars) {
+              // Hit-test against the smoothed on-screen position the user sees.
+              const cp = getRenderedPoint(car.car_id)
+                ?? (car.x != null && car.y != null && geo.supportsRawLiveProjection
+                  ? geo.projectRaw(car.x, car.y)
+                  : geo.at(car.lap_fraction));
               const dist = Math.hypot(svgPt.x - cp.x, svgPt.y - cp.y);
               if (dist < minDist) { minDist = dist; nearest = car.car_id; }
             }
@@ -202,16 +255,20 @@ export function TrackMap({ sessionKey, circuit, circuitKey, sessionYear }: Props
           ))}
 
           {/* Car dots — sorted so higher-position cars render below lower-position */}
-          {sorted.reverse().map((car) => (
+          {sortedCars.map((car) => (
             <CarDot
               key={car.car_id}
-              car={car}
+              team={car.team}
+              label={car.driver_code?.slice(0, 3) ?? car.car_id}
               focused={car.car_id === focusedCarId}
-              geo={geo}
+              registerRef={registerCar(car.car_id)}
             />
           ))}
         </svg>
       )}
+
+      {/* Pit-lane box — top left */}
+      <PitLaneBox cars={pitCars} focusedCarId={focusedCarId} onFocus={setFocusedCarId} />
 
       {/* Overlay chips — top right */}
       <div className="absolute top-2 right-2 flex gap-2 z-10">

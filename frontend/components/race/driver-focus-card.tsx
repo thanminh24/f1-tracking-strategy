@@ -124,7 +124,7 @@ function PredictionSection({ carId, sc1, sc5 }: { carId: string; sc1: number; sc
   );
 }
 
-export function DriverFocusCard() {
+export function DriverFocusCard({ fallback = "gap-chart" }: { fallback?: "gap-chart" | "leader" }) {
   const state = useRaceStateStore((s) => s.state);
   const focusedCarId = useRaceStateStore((s) => s.focusedCarId);
   const setFocusedCarId = useRaceStateStore((s) => s.setFocusedCarId);
@@ -139,9 +139,13 @@ export function DriverFocusCard() {
     );
   }
 
-  if (!focusedCarId) return <GapChart />;
+  const leaderId =
+    state.cars.find((c) => c.position === 1)?.car_id ?? state.cars[0]?.car_id ?? null;
+  const effectiveCarId = focusedCarId ?? (fallback === "leader" ? leaderId : null);
 
-  const car = state.cars.find((c) => c.car_id === focusedCarId);
+  if (!effectiveCarId) return <GapChart />;
+
+  const car = state.cars.find((c) => c.car_id === effectiveCarId);
   if (!car) {
     return (
       <div className="flex items-center justify-center h-full text-sm text-f1-muted">
@@ -333,7 +337,7 @@ export function DriverFocusCard() {
       )}
 
       {/* ── RL Predictions ──────────────────────────────────────── */}
-      <PredictionSection carId={focusedCarId} sc1={sc1} sc5={sc5} />
+      <PredictionSection carId={effectiveCarId} sc1={sc1} sc5={sc5} />
     </div>
   );
 }

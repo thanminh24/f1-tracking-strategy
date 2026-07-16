@@ -16,7 +16,7 @@ interface PitStopEntry {
 export function PitStopTimerBoard() {
   const state = useRaceStateStore((s) => s.state);
   const [entries, setEntries] = useState<PitStopEntry[]>([]);
-  const [counter, setCounter] = useState(0);
+  const [, setCounter] = useState(0);
 
   // Track pit entry times and previous statuses per car
   const pitTimesRef = useRef<Map<string, number>>(new Map());

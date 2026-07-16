@@ -30,6 +30,8 @@ export interface TrackGeo {
   at: (frac: number) => { x: number; y: number };
   /** Project raw F1 Cartesian coordinates to the same viewbox space as norm */
   projectRaw: (rawX: number, rawY: number) => { x: number; y: number };
+  /** Nearest arc-length fraction [0,1) for a point already in viewbox space. */
+  nearestFraction: (x: number, y: number) => number;
   /** True only when raw live Position.z coordinates share this geometry. */
   supportsRawLiveProjection: boolean;
   /** Total arc length in viewbox units */
@@ -182,6 +184,21 @@ function buildGeoFromMultiviewer(data: MultiviewerData): TrackGeo | null {
     return norm[Math.min(lo, norm.length - 1)];
   };
 
+  // Nearest arc-length fraction for a viewbox-space point (linear scan over the
+  // outline). Used to map a car's GPS-projected screen position onto the track
+  // so motion can be interpolated *along* the path instead of straight across.
+  const nearestFraction = (px: number, py: number) => {
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < norm.length; i++) {
+      const dx = norm[i].x - px;
+      const dy = norm[i].y - py;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return totalLen > 0 ? cum[best] / totalLen : 0;
+  };
+
   const d = `M ${norm.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")} Z`;
 
   // Transform corner label positions using same rotation+normalization
@@ -210,7 +227,7 @@ function buildGeoFromMultiviewer(data: MultiviewerData): TrackGeo | null {
   });
 
   return {
-    d, norm, at, projectRaw, supportsRawLiveProjection: true, totalLen,
+    d, norm, at, projectRaw, nearestFraction, supportsRawLiveProjection: true, totalLen,
     svgViewBox: computeSvgViewBox(norm),
     corners: transformedCorners,
     marshalSectors: transformedSectors,
@@ -254,8 +271,23 @@ function buildGeo(points: OutlinePoint[]): TrackGeo | null {
     return norm[Math.min(lo, norm.length - 1)];
   };
 
+  // Nearest arc-length fraction for a viewbox-space point (linear scan over the
+  // outline). Used to map a car's GPS-projected screen position onto the track
+  // so motion can be interpolated *along* the path instead of straight across.
+  const nearestFraction = (px: number, py: number) => {
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < norm.length; i++) {
+      const dx = norm[i].x - px;
+      const dy = norm[i].y - py;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return totalLen > 0 ? cum[best] / totalLen : 0;
+  };
+
   const d = `M ${norm.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ")} Z`;
-  return { d, norm, at, projectRaw, supportsRawLiveProjection: false, totalLen, svgViewBox: computeSvgViewBox(norm) };
+  return { d, norm, at, projectRaw, nearestFraction, supportsRawLiveProjection: false, totalLen, svgViewBox: computeSvgViewBox(norm) };
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
@@ -290,28 +322,25 @@ export function useTrackGeo(
     },
   );
   const mvGeo = mvGeoState?.key === mvKey ? mvGeoState.geo : null;
-  // Track whether multiviewer fetch failed so we can fall back to FastF1
-  const [mvFailed, setMvFailed] = useState(false);
 
   useEffect(() => {
     if (!isLive || circuitKey == null) return;
-    setMvFailed(false);
     const ck = circuitKey;
     const yr = year ?? new Date().getFullYear();
     const key = `${ck}:${yr}`;
     const cached = mvGeoCache.get(key);
-    if (cached) { setMvGeoState({ key, geo: cached }); return; }
-    setMvGeoState(null);
+    if (cached) {
+      Promise.resolve().then(() => setMvGeoState({ key, geo: cached }));
+      return;
+    }
     let cancelled = false;
     fetchMultiviewerCircuit(ck, yr).then((data) => {
       if (cancelled) return;
-      if (!data) { setMvFailed(true); return; }
+      if (!data) return;
       const geo = buildGeoFromMultiviewer(data);
       if (geo) {
         mvGeoCache.set(key, geo);
         setMvGeoState({ key, geo });
-      } else {
-        setMvFailed(true);
       }
     });
     return () => { cancelled = true; };
@@ -365,5 +394,5 @@ export function useTrackGeo(
     if (!geo) return null;
     geoCache.set(sessionKey, geo);
     return geo;
-  }, [isLive, mvGeo, mvFailed, points, sessionKey, archiveKey]);
+  }, [isLive, mvGeo, points, sessionKey, archiveKey]);
 }

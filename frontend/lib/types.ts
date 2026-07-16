@@ -185,6 +185,30 @@ export interface TeamRadioMessage {
   audio_url: string | null;
 }
 
+export type WorkspaceMode = "broadcast" | "pit-wall";
+
+export interface RuntimeCapabilities {
+  profile: string;
+  features: {
+    live: boolean;
+    archive: boolean;
+    fixture: boolean;
+    replay: boolean;
+    radio: boolean;
+    radio_asr?: boolean;
+    strategy: boolean;
+    what_if: boolean;
+    training: boolean;
+  };
+  providers: Record<string, string>;
+  sources: Record<string, boolean>;
+  models: Record<string, string>;
+  cache_policy: {
+    bundled_race_data: boolean;
+    archive_download: string;
+  };
+}
+
 export type WsMessage =
   | { type: "race_state"; data: RaceState }
   | { type: "replay_status"; data: ReplayStatus }

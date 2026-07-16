@@ -7,8 +7,10 @@ import type {
   RaceControlMessage,
   ReplayStatus,
 } from "./types";
+import { mergeRaceControlMessages } from "./race-control-merge";
+import { shouldSkipArchiveStateUpdate, shouldSkipStatusUpdate } from "./session-source";
 
-type DataSource = "archive" | "live";
+type DataSource = "archive" | "live" | "fixture";
 
 interface RaceStateStore {
   state: RaceState | null;
@@ -18,7 +20,6 @@ interface RaceStateStore {
   source: DataSource;
   focusedCarId: string | null;
   raceControlMessages: RaceControlMessage[];
-  // Convenience selectors for frequently-accessed live fields
   extrapolatedClock: LiveExtrapolatedClock | null;
   sessionInfo: LiveSessionInfo | null;
   setState: (s: RaceState) => void;
@@ -27,30 +28,9 @@ interface RaceStateStore {
   setReconnecting: (r: boolean) => void;
   setSource: (s: DataSource) => void;
   setFocusedCarId: (id: string | null) => void;
-  addRaceControlMessage: (msg: RaceControlMessage) => void;
+  mergeRaceControl: (incoming: RaceControlMessage[] | RaceControlMessage) => void;
   clearSessionData: (source: DataSource) => void;
   reset: () => void;
-}
-
-function raceControlKey(msg: RaceControlMessage): string {
-  return `${msg.lap ?? ""}:${msg.category}:${msg.message}`;
-}
-
-function mergeRaceControlMessages(
-  existing: RaceControlMessage[],
-  incoming: RaceControlMessage[] | undefined,
-): RaceControlMessage[] {
-  if (!incoming?.length) return existing;
-  const seen = new Set<string>();
-  const newestIncoming = [...incoming].reverse();
-  return [...newestIncoming, ...existing]
-    .filter((msg) => {
-      const key = raceControlKey(msg);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 10);
 }
 
 export const useRaceStateStore = create<RaceStateStore>((set) => ({
@@ -64,23 +44,38 @@ export const useRaceStateStore = create<RaceStateStore>((set) => ({
   extrapolatedClock: null,
   sessionInfo: null,
   setState: (state) =>
-    set((current) => ({
-      state,
-      extrapolatedClock: state.extrapolated_clock ?? null,
-      sessionInfo: state.session_info ?? null,
-      raceControlMessages: mergeRaceControlMessages(
-        current.raceControlMessages,
-        state.rc_messages,
-      ),
-    })),
-  setStatus: (status) => set({ status }),
+    set((current) => {
+      if (
+        current.source === "archive" &&
+        current.state &&
+        shouldSkipArchiveStateUpdate(current.state, state)
+      ) {
+        return current;
+      }
+      return {
+        state,
+        extrapolatedClock: state.extrapolated_clock ?? null,
+        sessionInfo: state.session_info ?? null,
+        raceControlMessages: mergeRaceControlMessages(
+          current.raceControlMessages,
+          state.rc_messages,
+        ),
+      };
+    }),
+  setStatus: (status) =>
+    set((current) => {
+      if (current.status && shouldSkipStatusUpdate(current.status, status)) {
+        return current;
+      }
+      return { status };
+    }),
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setSource: (source) => set({ source }),
   setFocusedCarId: (focusedCarId) => set({ focusedCarId }),
-  addRaceControlMessage: (msg) =>
-    set((s) => ({
-      raceControlMessages: [msg, ...s.raceControlMessages].slice(0, 10),
+  mergeRaceControl: (incoming) =>
+    set((current) => ({
+      raceControlMessages: mergeRaceControlMessages(current.raceControlMessages, incoming),
     })),
   clearSessionData: (source) =>
     set({

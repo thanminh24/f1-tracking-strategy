@@ -29,7 +29,7 @@ export function SectorTimeStrip({ lap, personalBestMs }: Props) {
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-f1-surface border-t border-f1-border text-xs font-data">
-      {sectors.map((sector, idx) => {
+      {sectors.map((sector) => {
         const percent = (sector.ms / totalMs) * 100;
         return (
           <div key={sector.name} className="flex flex-col gap-1 flex-1">

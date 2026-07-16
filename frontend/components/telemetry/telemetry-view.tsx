@@ -4,6 +4,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useLiveTelemetryStore } from "../../lib/live-telemetry-store";
 import { useRaceStateStore } from "../../lib/race-state-store";
+import { isLiveTimingSource } from "../../lib/session-source";
 import {
   bestLapForCar,
   carsFromLaps,
@@ -161,9 +162,10 @@ export function TelemetryView({ sessionKey, laps }: Props) {
 
   const { samplesMap, loadingKeys, fetchTelemetryBatch } = useTelemetryFetch(sessionKey);
   const source = useRaceStateStore((s) => s.source);
-  const liveCars = useRaceStateStore((s) => s.state?.cars ?? []);
+  const liveCarsRaw = useRaceStateStore((s) => s.state?.cars);
+  const liveCars = liveCarsRaw ?? [];
   const liveTelemData = useLiveTelemetryStore((s) => s.data);
-  const isLive = sessionKey === "live" || source === "live";
+  const isLive = isLiveTimingSource(source);
   const archiveCars = useMemo(() => carsFromLaps(laps), [laps]);
   const liveLeaderCarId = (liveCars.find((c) => c.position === 1) ?? liveCars[0])?.car_id ?? null;
   const effectiveLivePrimaryCarId = livePrimaryCarId ?? liveLeaderCarId;
@@ -220,29 +222,37 @@ export function TelemetryView({ sessionKey, laps }: Props) {
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-0">
-      {/* Sub-tab bar */}
-      <div className="flex items-center gap-0.5 px-3 pt-2 border-b border-f1-border shrink-0">
-        {SUB_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setSubTab(t.id)}
-            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-              subTab === t.id
-                ? "bg-f1-panel text-f1-text"
-                : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Sub-tab bar — archive only; live uses streaming traces only */}
+      {!isLive && (
+        <div className="flex items-center gap-0.5 px-3 pt-2 border-b border-f1-border shrink-0">
+          {SUB_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setSubTab(t.id)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                subTab === t.id
+                  ? "bg-f1-panel text-f1-text"
+                  : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Sectors and Evolution tabs — no header needed */}
-      {subTab === "sectors" && <SectorHeatmap laps={laps} />}
-      {subTab === "evolution" && <PositionBumpChart laps={laps} />}
+      {isLive && (
+        <div className="px-3 py-2 border-b border-f1-border shrink-0 text-[10px] uppercase tracking-widest text-f1-muted">
+          Live CarData traces · select driver below
+        </div>
+      )}
+
+      {/* Sectors and Evolution tabs — archive only */}
+      {!isLive && subTab === "sectors" && <SectorHeatmap laps={laps} />}
+      {!isLive && subTab === "evolution" && <PositionBumpChart laps={laps} />}
 
       {/* Traces tab */}
-      {subTab === "traces" && (isLive ? (
+      {(isLive || subTab === "traces") && (isLive ? (
         // Live mode: continuous streaming traces from CarData.z ring buffer
         <LiveTracesPanel
           primaryCarId={effectiveLivePrimaryCarId}

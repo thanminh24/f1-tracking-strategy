@@ -27,9 +27,7 @@ export function ScGauge() {
   const color = gaugeColor(p1);
 
   // Gauge arc: 220° sweep from -200° to 20°
-  const START = 200;
   const SWEEP = 220;
-  const filled = START + SWEEP * p1;
 
   // Sparkline
   const W = 80, H = 24;

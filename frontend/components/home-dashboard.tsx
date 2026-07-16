@@ -7,19 +7,23 @@ import { BackendOfflineCard } from "./home/backend-offline-card";
 import { LiveSchedule } from "./home/live-schedule";
 import { ArchiveBrowser } from "./home/archive-browser";
 import type { ScheduleSession } from "../lib/api-client";
+import type { RuntimeCapabilities } from "../lib/types";
 
 interface Props {
   schedule: ScheduleSession[];
   backendOnline: boolean;
+  capabilities: RuntimeCapabilities | null;
 }
 
 type HomeTab = "live" | "archive";
 
-export function HomeDashboard({ schedule, backendOnline }: Props) {
+export function HomeDashboard({ schedule, backendOnline, capabilities }: Props) {
   const hasLiveActivity = schedule.some(
     (s) => s.status === "active" || s.status === "upcoming"
   );
-  const [tab, setTab] = useState<HomeTab>(hasLiveActivity ? "live" : "archive");
+  const archiveEnabled = capabilities?.features.archive !== false;
+  const fixtureEnabled = capabilities?.features.fixture !== false;
+  const [tab, setTab] = useState<HomeTab>(hasLiveActivity || !archiveEnabled ? "live" : "archive");
 
   if (!backendOnline) {
     return (
@@ -48,23 +52,30 @@ export function HomeDashboard({ schedule, backendOnline }: Props) {
           )}
           Live
         </button>
-        <button
-          onClick={() => setTab("archive")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-semibold transition-colors ${
-            tab === "archive"
-              ? "bg-f1-panel text-f1-text"
-              : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
-          }`}
-        >
-          Archive
-        </button>
+        {archiveEnabled ? (
+          <button
+            onClick={() => setTab("archive")}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-semibold transition-colors ${
+              tab === "archive"
+                ? "bg-f1-panel text-f1-text"
+                : "text-f1-text-dim hover:text-f1-text hover:bg-f1-panel/50"
+            }`}
+          >
+            Archive
+          </button>
+        ) : (
+          <span className="chip text-[10px] bg-f1-panel text-f1-text-dim border border-f1-border">
+            Archive disabled
+          </span>
+        )}
       </div>
 
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {tab === "live" ? (
+        {tab === "live" || !archiveEnabled ? (
           <LiveSchedule
             initialSchedule={schedule.filter((s) => s.status !== "recent")}
+            showFixture={fixtureEnabled}
           />
         ) : (
           <ArchiveBrowser />

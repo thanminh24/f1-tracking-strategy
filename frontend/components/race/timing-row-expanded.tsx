@@ -1,10 +1,9 @@
 "use client";
-import { usePredictionStore } from "../../lib/prediction-store";
 import type { CarPrediction } from "../../lib/prediction-types";
 
 function formatLapRange(probs: Record<string, number>): string {
   const laps = Object.entries(probs)
-    .filter(([_, p]) => p > 0.2)
+    .filter(([, p]) => p > 0.2)
     .map(([lap]) => parseInt(lap, 10))
     .sort((a, b) => a - b);
 

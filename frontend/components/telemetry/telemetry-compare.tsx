@@ -1,6 +1,6 @@
 "use client";
 // Telemetry comparison view — multi-driver, multi-lap selector + traces chart.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { api } from "../../lib/api-client";
 import { teamColor } from "../../lib/team-colors";
 import { TracesChart } from "./traces-chart";
