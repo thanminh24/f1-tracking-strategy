@@ -1,0 +1,7 @@
+.git
+logs
+data
+plans
+docs/journals
+__pycache__
+*.pyc

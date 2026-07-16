@@ -1,0 +1,46 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      CORS_ORIGINS: http://localhost:3000
+      F1_RUNTIME_PROFILE: live-core
+      F1_ENABLE_ARCHIVE: "0"
+      F1_ENABLE_WHATIF: "0"
+      F1_PREDICTIONS: "0"
+      F1_DATA_DIR: /data
+    volumes:
+      - f1-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        BACKEND_INTERNAL_URL: http://backend:8000
+    environment:
+      # Browser uses same-origin (Next rewrites /api/* → backend); SSR uses
+      # BACKEND_INTERNAL_URL. Leave NEXT_PUBLIC_API_URL unset — an empty value
+      # would force SSR onto host-less relative URLs and break prefetch.
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  f1-data:

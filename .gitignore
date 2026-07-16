@@ -33,3 +33,6 @@ frontend/next-env.d.ts
 
 # Vendored f1-dash source (reference only, not pushed)
 f1-dash-4.0.6/
+
+# Claude Code local config (agent memory, local settings)
+.claude/

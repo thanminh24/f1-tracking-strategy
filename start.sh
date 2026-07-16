@@ -27,10 +27,10 @@ uv run uvicorn f1_strategy.api.app:app --reload --port 8000 \
   >> "$LOGS/backend.log" 2>&1 &
 echo $! > "$LOGS/backend.pid"
 
-# Frontend
+# Frontend (webpack + polling avoids Turbopack inotify watch-limit crashes on Linux)
 echo "Starting frontend..."
 cd "$REPO/frontend"
-npm run dev >> "$LOGS/frontend.log" 2>&1 &
+WATCHPACK_POLLING=true npm run dev -- --webpack >> "$LOGS/frontend.log" 2>&1 &
 echo $! > "$LOGS/frontend.pid"
 
 echo ""
