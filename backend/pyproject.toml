@@ -3,6 +3,7 @@ name = "f1-strategy"
 version = "0.1.0"
 description = "Local-first F1 viewer: archive, replay engine, telemetry dashboard, RL strategy predictions"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
     { name = "Than Minh", email = "minhthan189@gmail.com" }
 ]
